@@ -276,10 +276,15 @@ def valuation_engine(info, price, statements=None):
                     "valuation_note":"Unavailable: neither positive EPS nor usable revenue-per-share data was returned. Review the company’s reported statements; do not invent a valuation.",
                     "valuation_method":"Insufficient data","valuation_inputs":inputs}
 
-    upside = (base / price - 1) * 100
+    # Always populate scenario returns for the UI, whether values came from
+    # analyst targets or the transparent sector-reference model above.
+    bear_upside = (bear / price - 1) * 100 if np.isfinite(bear) and bear > 0 else np.nan
+    base_upside = (base / price - 1) * 100 if np.isfinite(base) and base > 0 else np.nan
+    bull_upside = (bull / price - 1) * 100 if np.isfinite(bull) and bull > 0 else np.nan
     return {"fair_value":base,"bear":bear,"base":base,"bull":bull,
-            "fair_value_upside":upside,"valuation_note":note,
-            "valuation_method":method,"valuation_inputs":inputs}
+            "fair_value_upside":base_upside,
+            "bear_upside":bear_upside,"base_upside":base_upside,"bull_upside":bull_upside,
+            "valuation_note":note,"valuation_method":method,"valuation_inputs":inputs}
 
 def entry_engine(t):
     p=t.get("price",np.nan); a=t.get("atr",np.nan); m20=t.get("ma20",np.nan); m50=t.get("ma50",np.nan); low=t.get("low20",np.nan); high=t.get("high20",np.nan)
