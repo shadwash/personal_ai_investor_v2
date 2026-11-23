@@ -13,11 +13,41 @@ from storage.history import record_research, log_frame
 st.set_page_config(page_title=APP_NAME,page_icon="📈",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-:root{color-scheme:light}.stApp{background:#f3f5f4;color:#202a25}.block-container{max-width:1500px;padding-top:1.3rem;padding-bottom:3rem}
-[data-testid="stSidebar"]{background:#fff;border-right:1px solid #e1e7e3}.hero{background:linear-gradient(115deg,#fff 0%,#f5faf7 100%);border:1px solid #dce6df;border-radius:16px;padding:1.5rem 1.7rem;margin-bottom:1.2rem}
-.kicker{font-size:.7rem;letter-spacing:.16em;font-weight:800;color:#47725d;text-transform:uppercase}.hero h1{font-size:2rem;line-height:1.15;margin:.35rem 0;color:#1f2d25}.hero p{color:#68766e;margin:0}.panel{background:#fff;border:1px solid #e1e7e3;border-radius:12px;padding:1rem 1.1rem}
-div[data-testid="stMetric"]{background:#fff;border:1px solid #e1e7e3;padding:.8rem;border-radius:10px} .stButton>button{border-radius:8px;font-weight:700;border:1px solid #cbd8d0}.stButton>button[kind="primary"]{background:#315f4b;color:white;border-color:#315f4b}
-[data-testid="stDataFrame"]{border:1px solid #e1e7e3;border-radius:10px;overflow:hidden}hr{border-color:#e1e7e3}
+:root{color-scheme:dark}
+.stApp{background:radial-gradient(ellipse at 12% 0%,rgba(20,184,166,.10),transparent 34%),radial-gradient(ellipse at 88% 8%,rgba(59,130,246,.10),transparent 30%),#080f1c;color:#e6edf7}
+.block-container{max-width:1540px;padding-top:1.25rem;padding-bottom:3.5rem}
+[data-testid="stHeader"]{background:rgba(8,15,28,.82)}
+[data-testid="stSidebar"]{background:linear-gradient(180deg,#0d192b 0%,#0a1220 100%);border-right:1px solid #1e3048}
+[data-testid="stSidebar"] *{color:#d9e5f5}
+[data-testid="stSidebar"] [data-testid="stRadio"] label{padding:.48rem .65rem;border-radius:9px}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover{background:#172940}
+.hero{position:relative;overflow:hidden;background:linear-gradient(112deg,#10243b 0%,#102d3b 48%,#123b43 100%);border:1px solid #24546a;border-radius:20px;padding:1.7rem 1.9rem;margin-bottom:1.5rem;box-shadow:0 16px 42px rgba(0,0,0,.24)}
+.hero:after{content:"";position:absolute;width:260px;height:260px;right:-65px;top:-145px;border:1px solid rgba(45,212,191,.28);border-radius:50%;box-shadow:0 0 0 24px rgba(45,212,191,.035),0 0 0 50px rgba(45,212,191,.025)}
+.kicker{font-size:.68rem;letter-spacing:.19em;font-weight:850;color:#5eead4;text-transform:uppercase}
+.hero h1{font-size:2.15rem;line-height:1.12;letter-spacing:.025em;margin:.42rem 0;color:#f8fbff}
+.hero p{color:#b7c9dc;margin:0;font-size:.96rem;max-width:850px}
+.panel{background:linear-gradient(145deg,#111f32,#0e1a2b);border:1px solid #243952;border-radius:14px;padding:1rem 1.1rem}
+h1,h2,h3{color:#f1f6ff!important;letter-spacing:-.02em}
+h2{padding-bottom:.45rem;border-bottom:1px solid #24374e}
+h3{color:#75e4d1!important}
+p,li,label,.stMarkdown{color:#d3deec}
+small,[data-testid="stCaptionContainer"]{color:#8fa5bd!important}
+div[data-testid="stMetric"]{background:linear-gradient(145deg,#14263b,#101d30);border:1px solid #2b4562;padding:.95rem 1rem;border-radius:13px;box-shadow:0 8px 22px rgba(0,0,0,.16);min-height:104px}
+div[data-testid="stMetric"] label{color:#9db3cb!important;font-size:.76rem!important;text-transform:uppercase;letter-spacing:.07em}
+div[data-testid="stMetric"] [data-testid="stMetricValue"]{color:#f4f8ff!important;font-weight:750}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"]{font-weight:700}
+.stButton>button{border-radius:10px;font-weight:750;border:1px solid #34506d;background:#17283d;color:#e8f2ff;transition:all .18s ease}
+.stButton>button:hover{border-color:#2dd4bf;color:#5eead4;background:#183448}
+.stButton>button[kind="primary"]{background:linear-gradient(100deg,#087f8c,#2563eb);color:white;border:1px solid #2997b3;box-shadow:0 7px 20px rgba(8,145,178,.2)}
+.stButton>button[kind="primary"]:hover{background:linear-gradient(100deg,#0d9aa6,#3478f6);border-color:#5eead4}
+[data-testid="stDataFrame"],[data-testid="stTable"]{border:1px solid #263d56;border-radius:12px;overflow:hidden;background:#101d2e}
+[data-testid="stExpander"]{border:1px solid #263d56;border-radius:12px;background:rgba(17,31,50,.72)}
+[data-testid="stAlert"]{border-radius:12px;border:1px solid #2b4562;background:#13243a}
+[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,[data-testid="stSelectbox"]>div>div{background:#101f32;color:#edf5ff;border-color:#304a66;border-radius:9px}
+[data-testid="stProgressBar"]>div>div{background:linear-gradient(90deg,#14b8a6,#3b82f6)}
+hr{border-color:#26394f}
+a{color:#5eead4!important}
+@media(max-width:700px){.hero{padding:1.25rem}.hero h1{font-size:1.65rem}.block-container{padding-left:1rem;padding-right:1rem}}
 </style>
 <div class="hero"><div class="kicker">Independent research desk · Version 2.0</div><h1>PERSONAL AI INVESTOR</h1><p>Discover exceptional businesses. Challenge the evidence. Find attractive prices before chasing becomes the only option.</p></div>
 """,unsafe_allow_html=True)
