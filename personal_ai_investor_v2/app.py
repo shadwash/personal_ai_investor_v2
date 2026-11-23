@@ -441,7 +441,7 @@ INDUSTRY_KEYWORDS = {
     "Infrastructure":["engineering","construction","infrastructure"],
     "Cloud Computing":["cloud computing","software infrastructure"],
     "Fintech":["financial technology","credit services","capital markets"],
-    "Artificial Intelligence":["artificial intelligence","AI software","technology"],
+    "Artificial Intelligence":["artificial intelligence","AI software","machine learning","neural networks"],
     "Uranium":["uranium"]
 }
 
@@ -504,54 +504,98 @@ def industry_etf_snapshot():
 
 
 def scan_industry_stocks(theme, scan_depth=100, max_reports=15):
+    """Rank stocks by relative strength versus their industry ETF before full research."""
     keywords=INDUSTRY_KEYWORDS.get(theme,[])
+    etf_symbol=INDUSTRY_ETFS.get(theme)
+    benchmark=history(etf_symbol,"6mo") if etf_symbol else pd.DataFrame()
+    benchmark_close=benchmark["Close"].dropna() if benchmark is not None and not benchmark.empty else pd.Series(dtype=float)
+
+    def return_pct(series, periods):
+        if len(series)>periods and pd.notna(series.iloc[-periods-1]) and float(series.iloc[-periods-1])!=0:
+            return (float(series.iloc[-1])/float(series.iloc[-periods-1])-1)*100
+        return np.nan
+
+    def relative_snapshot(symbol):
+        prices=history(symbol,"6mo")
+        if prices is None or prices.empty or "Close" not in prices: return {}
+        close=prices["Close"].dropna()
+        if len(close)<22 or len(benchmark_close)<22: return {}
+        sw,sm,sq=return_pct(close,5),return_pct(close,21),return_pct(close,63)
+        ew,em,eq=return_pct(benchmark_close,5),return_pct(benchmark_close,21),return_pct(benchmark_close,63)
+        rw=sw-ew if np.isfinite(sw) and np.isfinite(ew) else np.nan
+        rm=sm-em if np.isfinite(sm) and np.isfinite(em) else np.nan
+        rq=sq-eq if np.isfinite(sq) and np.isfinite(eq) else np.nan
+        accel=rw-rm/4 if np.isfinite(rw) and np.isfinite(rm) else np.nan
+        price=float(close.iloc[-1]); ma20=float(close.tail(20).mean())
+        ma50=float(close.tail(50).mean()) if len(close)>=50 else np.nan
+        above20=bool(price>ma20); above50=bool(np.isfinite(ma50) and price>ma50)
+        if np.isfinite(rw) and np.isfinite(rm) and np.isfinite(rq):
+            if rw>0 and rm>0 and rq<=0 and accel>0: signal="EARLY STOCK LEADER"
+            elif rw>0 and rm>0 and rq>0 and above20: signal="LEADING STOCK"
+            elif rw>0 and accel>0: signal="TURNING UP"
+            elif rw<0 and rm>0: signal="STRENGTH FADING"
+            elif rw<0 and rm<0 and rq<0: signal="UNDERPERFORMING"
+            else: signal="MIXED"
+        else: signal="INSUFFICIENT DATA"
+        score=(rw*.40+rm*.35+rq*.15+accel*.10) if all(np.isfinite(x) for x in [rw,rm,rq,accel]) else -999
+        return {"Stock 1W vs ETF":rw,"Stock 1M vs ETF":rm,"Stock 3M vs ETF":rq,
+                "Stock RS Acceleration":accel,"Stock Rotation Signal":signal,"Stock RS Rank":score,
+                "Above 20D":above20,"Above 50D":above50}
+
     candidates,coverage=discover_universe(scan_depth)
-    matches=[]
-    progress=st.progress(0);status=st.empty()
+    matches=[]; progress=st.progress(0)
     total=min(len(candidates),scan_depth)
     for idx,symbol in enumerate(candidates[:total]):
         try:
-            details=info(symbol)
-            industry=str(details.get("industry","")).lower()
-            sector=str(details.get("sector","")).lower()
-            haystack=industry+" "+sector
-            if keywords and any(word in haystack for word in keywords):
+            details=info(symbol); industry=str(details.get("industry","")).lower(); sector=str(details.get("sector","")).lower()
+            if keywords and any(word in industry+" "+sector for word in keywords):
                 matches.append({"symbol":symbol,"company":details.get("shortName") or details.get("longName") or symbol,"industry":details.get("industry","Unknown")})
-        except Exception:
-            pass
+        except Exception: pass
         progress.progress((idx+1)/max(total,1))
-    progress.empty();status.empty()
-    reports=[]
-    progress=st.progress(0);status=st.empty()
-    selected=matches[:max_reports]
+    progress.empty()
+
+    ranked=[]; progress=st.progress(0); status=st.empty()
+    for idx,item in enumerate(matches):
+        status.caption(f"Checking stock leadership · {item['symbol']} · {idx+1}/{len(matches)}")
+        try: item.update(relative_snapshot(item["symbol"]))
+        except Exception: item.update({"Stock RS Rank":-999,"Stock Rotation Signal":"INSUFFICIENT DATA"})
+        ranked.append(item); progress.progress((idx+1)/max(len(matches),1))
+    progress.empty(); status.empty()
+    ranked.sort(key=lambda item:item.get("Stock RS Rank",-999),reverse=True)
+    selected=ranked[:max_reports]
+
+    reports=[]; progress=st.progress(0); status=st.empty()
     for idx,item in enumerate(selected):
         status.caption(f"Building company evidence · {item['symbol']} · {idx+1}/{len(selected)}")
         try:
             data=research_company(item["symbol"])
             if data:
                 t=data["technical"]; v=data["valuation"]; entries=data["entries"]
-                price=t.get("price",np.nan)
-                pullback_low=entries.get("pullback_low",np.nan)
+                price=t.get("price",np.nan); pullback_low=entries.get("pullback_low",np.nan)
                 distance=(price/pullback_low-1)*100 if np.isfinite(price) and np.isfinite(pullback_low) and pullback_low>0 else np.nan
                 reports.append({
-                    "Ticker":item["symbol"],"Company":company_name(data),"Industry":item["industry"],
-                    "Price":price,"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),
+                    "Ticker":item["symbol"],"Company":company_name(data),"Industry":item["industry"],"Price":price,
+                    "1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),
+                    "Stock Rotation Signal":item.get("Stock Rotation Signal","INSUFFICIENT DATA"),
+                    "Stock RS Rank":item.get("Stock RS Rank",np.nan),
+                    "1W vs ETF":item.get("Stock 1W vs ETF",np.nan),"1M vs ETF":item.get("Stock 1M vs ETF",np.nan),
+                    "3M vs ETF":item.get("Stock 3M vs ETF",np.nan),"RS Acceleration":item.get("Stock RS Acceleration",np.nan),
+                    "Above 20D":item.get("Above 20D",False),"Above 50D":item.get("Above 50D",False),
                     "Trend":t.get("trend"),"RSI":t.get("rsi"),"Technical Score":t.get("technical_score"),
                     "Business Score":data.get("fundamental_score"),"Opportunity Score":data.get("opportunity_score"),
                     "Fair Value Upside":v.get("fair_value_upside"),"Distance vs Pullback Zone":distance,
                     "Desk Flags":"; ".join(data["shield"]["flags"])
                 })
-        except Exception:
-            pass
+        except Exception: pass
         progress.progress((idx+1)/max(len(selected),1))
-    progress.empty();status.empty()
-    reports.sort(key=lambda row: row.get("Opportunity Score") if np.isfinite(row.get("Opportunity Score",np.nan)) else -1,reverse=True)
+    progress.empty(); status.empty()
+    priorities={"EARLY STOCK LEADER":0,"TURNING UP":1,"LEADING STOCK":2,"MIXED":3,"STRENGTH FADING":4,"UNDERPERFORMING":5,"INSUFFICIENT DATA":6}
+    reports.sort(key=lambda row:(priorities.get(row.get("Stock Rotation Signal"),7),-(row.get("Stock RS Rank") if np.isfinite(row.get("Stock RS Rank",np.nan)) else -999),-(row.get("Opportunity Score") if np.isfinite(row.get("Opportunity Score",np.nan)) else -1)))
     return reports,coverage,len(matches)
-
 
 def render_industry_discovery():
     st.markdown("## Industry & ETF Discovery")
-    st.write("Find where capital is moving, compare industry trends with the S&P 500, then inspect individual companies for business quality and early entry setups.")
+    st.write("Find where capital is moving, then identify individual stocks whose relative strength is improving before the whole industry becomes an obvious leader.")
     st.caption("Industry ETFs are investable proxies, not pure measures of every company in a theme. ETF performance can be concentrated in a few large holdings.")
     if st.button("Refresh industry leadership",type="primary"):
         st.cache_data.clear()
@@ -580,7 +624,7 @@ def render_industry_discovery():
         "RSI":st.column_config.NumberColumn(format="%.1f")
     })
     st.caption("Rotation signals are descriptive rules, not forecasts. RS acceleration compares the latest week's relative return with one-quarter of the month's relative return; short windows are noisy. Check liquidity, holdings, fundamentals and the underlying chart before acting.")
-    st.markdown("### Find individual companies in a selected theme")
+    st.markdown("### Find individual companies gaining strength inside a selected theme")
     theme=st.selectbox("Choose an industry or theme",list(INDUSTRY_ETFS.keys()),index=0)
     etf=INDUSTRY_ETFS[theme]
     etf_row=frame[frame["ETF"]==etf]
@@ -599,12 +643,17 @@ def render_industry_discovery():
         st.session_state["industry_selected_theme"]=theme
     reports=st.session_state.get("industry_reports",[])
     if reports and st.session_state.get("industry_selected_theme")==theme:
-        st.caption(f"Matched {st.session_state.get('industry_match_count',0)} candidate descriptions in a sampled universe. Fully researched {len(reports)}. Candidate source: {st.session_state.get('industry_coverage',{})}.")
-        columns=["Ticker","Company","Industry","Price","1M Return","3M Return","Trend","RSI","Technical Score","Business Score","Opportunity Score","Fair Value Upside","Distance vs Pullback Zone","Desk Flags"]
+        st.caption(f"Matched {st.session_state.get('industry_match_count',0)} candidate descriptions in a sampled universe. Stock-level relative strength was checked against the selected industry ETF before researching the top {len(reports)}. Candidate source: {st.session_state.get('industry_coverage',{})}.")
+        columns=["Ticker","Company","Industry","Price","Stock Rotation Signal","1W vs ETF","1M vs ETF","3M vs ETF","RS Acceleration","Above 20D","Above 50D","1M Return","3M Return","Trend","RSI","Technical Score","Business Score","Opportunity Score","Fair Value Upside","Distance vs Pullback Zone","Desk Flags"]
         st.dataframe(pd.DataFrame(reports)[columns],use_container_width=True,hide_index=True,column_config={
             "Price":st.column_config.NumberColumn(format="$%.2f"),
             "1M Return":st.column_config.NumberColumn(format="%.1f%%"),
             "3M Return":st.column_config.NumberColumn(format="%.1f%%"),
+            "1W vs ETF":st.column_config.NumberColumn(format="%+.1f pp"),
+            "1M vs ETF":st.column_config.NumberColumn(format="%+.1f pp"),
+            "3M vs ETF":st.column_config.NumberColumn(format="%+.1f pp"),
+            "RS Acceleration":st.column_config.NumberColumn(format="%+.1f pp"),
+            "Stock RS Rank":st.column_config.NumberColumn(format="%.2f"),
             "RSI":st.column_config.NumberColumn(format="%.1f"),
             "Technical Score":st.column_config.NumberColumn(format="%.1f"),
             "Business Score":st.column_config.NumberColumn(format="%.1f"),
