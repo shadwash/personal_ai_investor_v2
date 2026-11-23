@@ -203,7 +203,7 @@ def valuation_engine(info, price, statements=None):
         base = eps * target_pe
         bull = eps * target_pe * 1.25
         method = "Earnings-based"
-        source = "forward EPS" if eps is eps_forward else "trailing EPS"
+        source = "forward EPS" if np.isfinite(eps_forward) and eps_forward > 0 else "trailing EPS"
         note = (f"{source} of ${eps:.2f} × sector reference P/E of {target_pe:.1f}×. "
                 "Bear/base/bull use 75%/100%/125% of that reference multiple. "
                 "This is a transparent screening estimate, not a price target from an analyst.")
