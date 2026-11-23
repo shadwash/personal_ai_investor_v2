@@ -77,6 +77,7 @@ def fundamental_engine(info, statements=None):
         "profit_margin": fnum(i.get("profitMargins")),
         "roe": fnum(i.get("returnOnEquity")),
         "fcf": fnum(i.get("freeCashflow")),
+        "operating_cash_flow": np.nan,
         "debt_equity": fnum(i.get("debtToEquity")),
         "forward_pe": fnum(i.get("forwardPE")),
         "peg": fnum(i.get("pegRatio")),
@@ -103,7 +104,8 @@ def fundamental_engine(info, statements=None):
     if np.isfinite(ocf) and np.isfinite(capex):
         metrics["fcf"] = ocf - abs(capex); sources["fcf"] = "Cash flow statement"
     elif np.isfinite(ocf):
-        metrics["fcf"] = ocf; sources["fcf"] = "Operating cash flow (CapEx unavailable; FCF not inferred)"
+        metrics["operating_cash_flow"] = ocf; sources["operating_cash_flow"] = "Cash flow statement"
+        metrics["fcf"] = np.nan; sources["fcf"] = ""
     if np.isfinite(total_debt) and np.isfinite(equity) and equity > 0:
         metrics["debt_equity"] = total_debt / equity * 100; sources["debt_equity"] = "Balance sheet"
     # Exclude metrics that are structurally misleading for banks/insurers.
