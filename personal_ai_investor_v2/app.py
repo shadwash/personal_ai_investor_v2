@@ -90,9 +90,9 @@ def company_name(d):return d["info"].get("longName") or d["info"].get("shortName
 def research_table(rows):
     if not rows: st.info("No candidates returned. Free screeners can be rate-limited or incomplete; try again later or use Company Research.");return
     df=pd.DataFrame(rows)
-    preferred=["Ticker","Company","Price","1W Return","1M Return","3M Return","RSI","Trend","Chart Read","Business Score","Technical Score","Momentum Score","Fair Value Upside","Desk Flags"]
+    preferred=["Ticker","Company","Price","1W Return","1M Return","3M Return","RSI","Trend","Chart Read","Opportunity Score","Business Score","Technical Score","Momentum Score","Fundamental Coverage","Fair Value Upside","Desk Flags"]
     df=df[[c for c in preferred if c in df.columns]]
-    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Price":st.column_config.NumberColumn(format="$%.2f"),"1W Return":st.column_config.NumberColumn(format="%.1f%%"),"1M Return":st.column_config.NumberColumn(format="%.1f%%"),"3M Return":st.column_config.NumberColumn(format="%.1f%%"),"RSI":st.column_config.NumberColumn(format="%.1f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%"),"Business Score":st.column_config.NumberColumn(format="%.1f"),"Technical Score":st.column_config.NumberColumn(format="%.1f"),"Momentum Score":st.column_config.NumberColumn(format="%.1f")})
+    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Price":st.column_config.NumberColumn(format="$%.2f"),"1W Return":st.column_config.NumberColumn(format="%.1f%%"),"1M Return":st.column_config.NumberColumn(format="%.1f%%"),"3M Return":st.column_config.NumberColumn(format="%.1f%%"),"RSI":st.column_config.NumberColumn(format="%.1f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%"),"Business Score":st.column_config.NumberColumn(format="%.1f"),"Technical Score":st.column_config.NumberColumn(format="%.1f"),"Momentum Score":st.column_config.NumberColumn(format="%.1f"),"Opportunity Score":st.column_config.NumberColumn(format="%.1f"),"Fundamental Coverage":st.column_config.NumberColumn(format="%.0f%%")})
 
 
 def fundamentals_story(m, info):
@@ -402,12 +402,13 @@ def scan_market(count=DEFAULT_SCAN,mode="Investment"):
             if d:
                 t=d["technical"];v=d["valuation"]
                 chart_read = "Uptrend / constructive" if t.get("trend")=="Bullish" and t.get("return_1m",0)>0 else "Trying to improve" if t.get("trend")=="Improving" else "Weak / needs repair"
-                row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Business Score":d.get("fundamental_score"),"Technical Score":t.get("technical_score"),"Momentum Score":t.get("momentum_score"),"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
+                row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Opportunity Score":d.get("opportunity_score"),"Business Score":d.get("fundamental_score"),"Technical Score":t.get("technical_score"),"Momentum Score":t.get("momentum_score"),"Fundamental Coverage":d.get("fundamental_coverage"),"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
                 if mode=="Swing" and not (np.isfinite(t.get("price",np.nan)) and np.isfinite(t.get("ma20",np.nan)) and t["price"]>t["ma20"] and t.get("return_1m",0)>0 and t.get("relative_volume",0)>=0.8): continue
                 rows.append(row)
         except Exception:pass
         progress.progress((n+1)/max(total,1))
     progress.empty();status.empty()
+    rows.sort(key=lambda item: item.get("Opportunity Score") if np.isfinite(item.get("Opportunity Score",np.nan)) else -1, reverse=True)
     return rows,coverage
 
 if page=="Command Center":
