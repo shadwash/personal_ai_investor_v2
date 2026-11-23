@@ -30,6 +30,7 @@ def research_company(symbol):
         "fundamental_metrics":metrics, "fundamental_score":fund, "fundamental_coverage":coverage,
         "fundamental_status":metrics.get("fundamental_status","Insufficient data"),
         "fundamental_data_errors":statements.get("errors",[]),
+        "financial_statements":statements,
         "valuation":val, "entries":entries, "shield":shield, "news":headlines,
         "catalyst_score":catalyst_score, "opportunity_score":score
     }
