@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from config import APP_NAME, APP_TAGLINE, DEFAULT_SCAN, MAX_SCAN, SECTOR_ETFS
-from data.market_data import discover_universe, history, sector_etf_history
+from data.market_data import discover_universe, history, info, sector_etf_history
 from research.company_research import research_company
 from charts.price_chart import build_chart
 from storage.history import record_research, log_frame
@@ -73,7 +73,7 @@ iframe{color-scheme:dark}
 <div class="hero"><div class="kicker">Independent research desk · Version 2.0</div><h1>PERSONAL AI INVESTOR</h1><p>Discover exceptional businesses. Challenge the evidence. Find attractive prices before chasing becomes the only option.</p></div>
 """,unsafe_allow_html=True)
 
-PAGES=["Command Center","Market Opportunities","Company Research","Entry & Risk","Swing Research","AI Investment Committee","Institutional Research Suite","Research History","Methodology"]
+PAGES=["Command Center","Market Opportunities","Industry & ETF Discovery","Company Research","Entry & Risk","Swing Research","AI Investment Committee","Institutional Research Suite","Research History","Methodology"]
 with st.sidebar:
     st.markdown("### PERSONAL AI INVESTOR")
     page=st.radio("Research workspace",PAGES,label_visibility="collapsed")
@@ -411,6 +411,193 @@ def scan_market(count=DEFAULT_SCAN,mode="Investment"):
     rows.sort(key=lambda item: item.get("Opportunity Score") if np.isfinite(item.get("Opportunity Score",np.nan)) else -1, reverse=True)
     return rows,coverage
 
+
+INDUSTRY_ETFS = {
+    "Semiconductors":"SMH", "Software":"IGV", "Cybersecurity":"CIBR",
+    "Biotechnology":"XBI", "Medical Devices":"IHI", "Robotics & Automation":"BOTZ",
+    "Aerospace & Defense":"ITA", "Clean Energy":"ICLN", "Solar":"TAN",
+    "Oil & Gas Exploration":"XOP", "Metals & Mining":"XME", "Regional Banks":"KRE",
+    "Transportation":"IYT", "Retail":"XRT", "Homebuilders":"XHB",
+    "Infrastructure":"PAVE", "Cloud Computing":"SKYY", "Fintech":"FINX",
+    "Artificial Intelligence":"AIQ", "Uranium":"URA"
+}
+
+INDUSTRY_KEYWORDS = {
+    "Semiconductors":["semiconductor","semiconductors","chip","integrated circuits"],
+    "Software":["software","application software","systems software"],
+    "Cybersecurity":["cybersecurity","security software","internet security"],
+    "Biotechnology":["biotechnology","biotech"],
+    "Medical Devices":["medical devices","medical instruments","healthcare equipment"],
+    "Robotics & Automation":["robot","automation","industrial machinery"],
+    "Aerospace & Defense":["aerospace","defense","military"],
+    "Clean Energy":["renewable","clean energy","solar","wind"],
+    "Solar":["solar"],
+    "Oil & Gas Exploration":["oil & gas","oil and gas","exploration","drilling"],
+    "Metals & Mining":["steel","copper","aluminum","gold","silver","mining"],
+    "Regional Banks":["regional bank","regional banks"],
+    "Transportation":["air freight","railroads","trucking","shipping","transportation"],
+    "Retail":["retail","department stores","specialty stores"],
+    "Homebuilders":["residential construction","homebuilding","home builders"],
+    "Infrastructure":["engineering","construction","infrastructure"],
+    "Cloud Computing":["cloud computing","software infrastructure"],
+    "Fintech":["financial technology","credit services","capital markets"],
+    "Artificial Intelligence":["artificial intelligence","AI software","technology"],
+    "Uranium":["uranium"]
+}
+
+
+def industry_etf_snapshot():
+    rows=[]
+    benchmark=history("SPY","6mo")
+    spy=benchmark["Close"].dropna() if benchmark is not None and not benchmark.empty else pd.Series(dtype=float)
+    for theme,symbol in INDUSTRY_ETFS.items():
+        frame=history(symbol,"6mo")
+        if frame is None or frame.empty or len(frame)<22: continue
+        close=frame["Close"].dropna()
+        if len(close)<22: continue
+        def pct(n):
+            return (float(close.iloc[-1])/float(close.iloc[-n-1])-1)*100 if len(close)>n and close.iloc[-n-1] else np.nan
+        one=pct(21); three=pct(63); week=pct(5)
+        ma20=float(close.tail(20).mean()); ma50=float(close.tail(50).mean()) if len(close)>=50 else np.nan
+        rsi=np.nan
+        delta=close.diff()
+        gains=delta.clip(lower=0).rolling(14).mean()
+        losses=-delta.clip(upper=0).rolling(14).mean()
+        if len(close)>=15 and losses.iloc[-1]>0:
+            rsi=float(100-(100/(1+gains.iloc[-1]/losses.iloc[-1])))
+        elif len(close)>=15 and gains.iloc[-1]>0 and losses.iloc[-1]==0:
+            rsi=100.0
+        spy_one=(float(spy.iloc[-1])/float(spy.iloc[-22])-1)*100 if len(spy)>22 and spy.iloc[-22] else np.nan
+        spy_three=(float(spy.iloc[-1])/float(spy.iloc[-64])-1)*100 if len(spy)>64 and spy.iloc[-64] else np.nan
+        rows.append({
+            "Industry / theme":theme,"ETF":symbol,"Price":float(close.iloc[-1]),
+            "1W Return":week,"1M Return":one,"3M Return":three,
+            "1M vs SPY":one-spy_one if np.isfinite(spy_one) else np.nan,
+            "3M vs SPY":three-spy_three if np.isfinite(spy_three) else np.nan,
+            "Above 20D":bool(close.iloc[-1]>ma20),"Above 50D":bool(np.isfinite(ma50) and close.iloc[-1]>ma50),
+            "RSI":rsi
+        })
+    return pd.DataFrame(rows)
+
+
+def scan_industry_stocks(theme, scan_depth=100, max_reports=15):
+    keywords=INDUSTRY_KEYWORDS.get(theme,[])
+    candidates,coverage=discover_universe(scan_depth)
+    matches=[]
+    progress=st.progress(0);status=st.empty()
+    total=min(len(candidates),scan_depth)
+    for idx,symbol in enumerate(candidates[:total]):
+        try:
+            details=info(symbol)
+            industry=str(details.get("industry","")).lower()
+            sector=str(details.get("sector","")).lower()
+            haystack=industry+" "+sector
+            if keywords and any(word in haystack for word in keywords):
+                matches.append({"symbol":symbol,"company":details.get("shortName") or details.get("longName") or symbol,"industry":details.get("industry","Unknown")})
+        except Exception:
+            pass
+        progress.progress((idx+1)/max(total,1))
+    progress.empty();status.empty()
+    reports=[]
+    progress=st.progress(0);status=st.empty()
+    selected=matches[:max_reports]
+    for idx,item in enumerate(selected):
+        status.caption(f"Building company evidence · {item['symbol']} · {idx+1}/{len(selected)}")
+        try:
+            data=research_company(item["symbol"])
+            if data:
+                t=data["technical"]; v=data["valuation"]; entries=data["entries"]
+                price=t.get("price",np.nan)
+                pullback_low=entries.get("pullback_low",np.nan)
+                distance=(price/pullback_low-1)*100 if np.isfinite(price) and np.isfinite(pullback_low) and pullback_low>0 else np.nan
+                reports.append({
+                    "Ticker":item["symbol"],"Company":company_name(data),"Industry":item["industry"],
+                    "Price":price,"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),
+                    "Trend":t.get("trend"),"RSI":t.get("rsi"),"Technical Score":t.get("technical_score"),
+                    "Business Score":data.get("fundamental_score"),"Opportunity Score":data.get("opportunity_score"),
+                    "Fair Value Upside":v.get("fair_value_upside"),"Distance vs Pullback Zone":distance,
+                    "Desk Flags":"; ".join(data["shield"]["flags"])
+                })
+        except Exception:
+            pass
+        progress.progress((idx+1)/max(len(selected),1))
+    progress.empty();status.empty()
+    reports.sort(key=lambda row: row.get("Opportunity Score") if np.isfinite(row.get("Opportunity Score",np.nan)) else -1,reverse=True)
+    return reports,coverage,len(matches)
+
+
+def render_industry_discovery():
+    st.markdown("## Industry & ETF Discovery")
+    st.write("Find where capital is moving, compare industry trends with the S&P 500, then inspect individual companies for business quality and early entry setups.")
+    st.caption("Industry ETFs are investable proxies, not pure measures of every company in a theme. ETF performance can be concentrated in a few large holdings.")
+    if st.button("Refresh industry leadership",type="primary"):
+        st.cache_data.clear()
+        st.session_state.pop("industry_snapshot",None)
+    if "industry_snapshot" not in st.session_state:
+        with st.spinner("Comparing industry ETFs with the market..."):
+            st.session_state["industry_snapshot"]=industry_etf_snapshot()
+    frame=st.session_state["industry_snapshot"]
+    if frame.empty:
+        st.warning("Industry ETF price history is unavailable from the free data source right now.")
+        return
+    frame=frame.sort_values(["1M vs SPY","3M vs SPY"],ascending=False,na_position="last")
+    st.markdown("### Industry leadership")
+    st.dataframe(frame,use_container_width=True,hide_index=True,column_config={
+        "Price":st.column_config.NumberColumn(format="$%.2f"),
+        "1W Return":st.column_config.NumberColumn(format="%.1f%%"),
+        "1M Return":st.column_config.NumberColumn(format="%.1f%%"),
+        "3M Return":st.column_config.NumberColumn(format="%.1f%%"),
+        "1M vs SPY":st.column_config.NumberColumn(format="%+.1f pp"),
+        "3M vs SPY":st.column_config.NumberColumn(format="%+.1f pp"),
+        "RSI":st.column_config.NumberColumn(format="%.1f")
+    })
+    st.caption("Relative returns are percentage-point differences versus SPY over matching lookback windows. RSI and moving-average flags describe the ETF chart, not its holdings.")
+    st.markdown("### Find individual companies in a leading theme")
+    theme=st.selectbox("Choose an industry or theme",list(INDUSTRY_ETFS.keys()),index=0)
+    etf=INDUSTRY_ETFS[theme]
+    etf_row=frame[frame["ETF"]==etf]
+    if not etf_row.empty:
+        row=etf_row.iloc[0]
+        st.write(f"**{theme} ({etf})** · 1M {row['1M Return']:+.1f}% · 3M {row['3M Return']:+.1f}% · vs SPY {row['1M vs SPY']:+.1f} percentage points over one month.")
+        if not (row["Above 20D"] and row["Above 50D"]):
+            st.info("The ETF trend is not above both its 20- and 50-day averages. Treat the theme as developing or weak until the chart improves.")
+    depth=st.select_slider("Candidate universe to inspect",options=[40,60,80,100,125,150],value=80,key="industry_depth")
+    if st.button("Find companies in this industry",type="primary"):
+        with st.spinner(f"Matching listed companies to {theme}, then evaluating fundamentals and technicals..."):
+            reports,coverage,match_count=scan_industry_stocks(theme,depth)
+        st.session_state["industry_reports"]=reports
+        st.session_state["industry_coverage"]=coverage
+        st.session_state["industry_match_count"]=match_count
+        st.session_state["industry_selected_theme"]=theme
+    reports=st.session_state.get("industry_reports",[])
+    if reports and st.session_state.get("industry_selected_theme")==theme:
+        st.caption(f"Matched {st.session_state.get('industry_match_count',0)} candidate descriptions in a sampled universe. Fully researched {len(reports)}. Candidate source: {st.session_state.get('industry_coverage',{})}.")
+        columns=["Ticker","Company","Industry","Price","1M Return","3M Return","Trend","RSI","Technical Score","Business Score","Opportunity Score","Fair Value Upside","Distance vs Pullback Zone","Desk Flags"]
+        st.dataframe(pd.DataFrame(reports)[columns],use_container_width=True,hide_index=True,column_config={
+            "Price":st.column_config.NumberColumn(format="$%.2f"),
+            "1M Return":st.column_config.NumberColumn(format="%.1f%%"),
+            "3M Return":st.column_config.NumberColumn(format="%.1f%%"),
+            "RSI":st.column_config.NumberColumn(format="%.1f"),
+            "Technical Score":st.column_config.NumberColumn(format="%.1f"),
+            "Business Score":st.column_config.NumberColumn(format="%.1f"),
+            "Opportunity Score":st.column_config.NumberColumn(format="%.1f"),
+            "Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%"),
+            "Distance vs Pullback Zone":st.column_config.NumberColumn(format="%.1f%%")
+        })
+        pick=st.selectbox("Open full company report",[x["Ticker"] for x in reports],key="industry_pick")
+        if st.button("Build full investment report",key="industry_full_report"):
+            report=research_company(pick)
+            if report:
+                st.session_state["active_report"]=report
+                record_research(report)
+        if st.session_state.get("active_report"):
+            thesis(st.session_state["active_report"])
+    elif st.session_state.get("industry_selected_theme")==theme:
+        st.info("No matching companies with complete research data were found in this sampled candidate pool. Try a larger universe or another theme.")
+    st.caption("Free Yahoo Finance industry classifications can be broad or missing. This scan is a discovery sample, not a complete ETF holdings look-through or exhaustive exchange scan. Confirm holdings and business exposure before relying on a theme match.")
+
+
+
 if page=="Command Center":
     st.markdown("## Investment Command Center")
     st.write("A concise view of market conditions and the research priorities most deserving of your attention.")
@@ -439,6 +626,9 @@ if page=="Command Center":
             d=research_company(pick);st.session_state["active_report"]=d
         if st.session_state.get("active_report"):thesis(st.session_state["active_report"])
     else:st.info("Run the intelligence scan to populate your research priorities.")
+
+elif page=="Industry & ETF Discovery":
+    render_industry_discovery()
 
 elif page=="Market Opportunities":
     st.markdown("## Market Opportunities")
