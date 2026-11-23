@@ -90,9 +90,9 @@ def company_name(d):return d["info"].get("longName") or d["info"].get("shortName
 def research_table(rows):
     if not rows: st.info("No candidates returned. Free screeners can be rate-limited or incomplete; try again later or use Company Research.");return
     df=pd.DataFrame(rows)
-    preferred=["Ticker","Company","Price","1W Return","1M Return","3M Return","RSI","Trend","Chart Read","Fair Value Upside","Desk Flags"]
+    preferred=["Ticker","Company","Price","1W Return","1M Return","3M Return","RSI","Trend","Chart Read","Business Score","Technical Score","Momentum Score","Fair Value Upside","Desk Flags"]
     df=df[[c for c in preferred if c in df.columns]]
-    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Price":st.column_config.NumberColumn(format="$%.2f"),"1W Return":st.column_config.NumberColumn(format="%.1f%%"),"1M Return":st.column_config.NumberColumn(format="%.1f%%"),"3M Return":st.column_config.NumberColumn(format="%.1f%%"),"RSI":st.column_config.NumberColumn(format="%.1f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%")})
+    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Price":st.column_config.NumberColumn(format="$%.2f"),"1W Return":st.column_config.NumberColumn(format="%.1f%%"),"1M Return":st.column_config.NumberColumn(format="%.1f%%"),"3M Return":st.column_config.NumberColumn(format="%.1f%%"),"RSI":st.column_config.NumberColumn(format="%.1f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%"),"Business Score":st.column_config.NumberColumn(format="%.1f"),"Technical Score":st.column_config.NumberColumn(format="%.1f"),"Momentum Score":st.column_config.NumberColumn(format="%.1f")})
 
 
 def fundamentals_story(m, info):
@@ -189,6 +189,75 @@ def technical_story(t):
     structure_text=f"Price is {proximity:.1f}% below its 20-day high." if np.isfinite(proximity) else "Recent price structure is incomplete."
     return {"trend":trend_text,"momentum":momentum_text,"rsi":rsi_text,"volume":volume_text,"structure":structure_text}
 
+
+def financial_history_frame(data):
+    """Build a compact reported financial history table from available Yahoo statements."""
+    statements=data.get("financial_statements",{}) or {}
+    aliases={
+        "Revenue":["Total Revenue","Operating Revenue","Revenue"],
+        "Operating income":["Operating Income"],
+        "Net income":["Net Income","Net Income Common Stockholders"],
+        "Operating cash flow":["Operating Cash Flow","Cash Flow From Continuing Operating Activities"],
+        "Capital expenditures":["Capital Expenditure","Capital Expenditures"],
+        "Free cash flow":["Free Cash Flow"],
+        "Total debt":["Total Debt","Long Term Debt And Capital Lease Obligation"],
+        "Cash and equivalents":["Cash And Cash Equivalents","Cash Cash Equivalents And Short Term Investments"],
+    }
+    rows=[]
+    for label,keys in aliases.items():
+        frame_key="cashflow" if label in ("Operating cash flow","Capital expenditures","Free cash flow") else "balance" if label in ("Total debt","Cash and equivalents") else "income"
+        frame=statements.get(frame_key)
+        if not isinstance(frame,pd.DataFrame) or frame.empty: continue
+        wanted={str(k).lower().replace(" ","").replace("_","") for k in keys}
+        found=None
+        for idx in frame.index:
+            normalized=str(idx).lower().replace(" ","").replace("_","")
+            if normalized in wanted or any(normalized.startswith(k) for k in wanted):
+                found=idx; break
+        if found is None: continue
+        series=frame.loc[found]
+        if isinstance(series,pd.DataFrame): series=series.iloc[0]
+        row={"Metric":label}
+        for col,value in series.items():
+            try:
+                number=float(value)
+                if np.isfinite(number):
+                    try: period=pd.Timestamp(col).strftime("%Y")
+                    except Exception: period=str(col)
+                    row[period]=number/1e9
+            except Exception: pass
+        if len(row)>1: rows.append(row)
+    if not rows: return pd.DataFrame()
+    result=pd.DataFrame(rows).set_index("Metric")
+    result=result.loc[:,~result.columns.duplicated()]
+    return result.round(2)
+
+
+def sector_relative_context(data):
+    """Compare the stock with its broad sector ETF using the same cached price source."""
+    sector=str(data.get("info",{}).get("sector","")).strip()
+    mapping={
+        "Technology":"Technology","Financial Services":"Financials","Healthcare":"Healthcare",
+        "Consumer Defensive":"Consumer Staples","Consumer Cyclical":"Consumer Discretionary",
+        "Industrials":"Industrials","Energy":"Energy","Utilities":"Utilities",
+        "Basic Materials":"Materials","Real Estate":"Real Estate",
+        "Communication Services":"Communication Services"
+    }
+    key=mapping.get(sector)
+    etf=SECTOR_ETFS.get(key) if key else None
+    if not etf: return None
+    frame=sector_etf_history(etf)
+    if frame is None or frame.empty or len(frame)<22: return None
+    close=frame["Close"].dropna()
+    stock=data.get("history")
+    if stock is None or stock.empty: return None
+    stock_close=stock["Close"].dropna()
+    def ret(series,n):
+        return (float(series.iloc[-1])/float(series.iloc[-n-1])-1)*100 if len(series)>n and float(series.iloc[-n-1]) else np.nan
+    return {"sector":sector,"etf":etf,"one_month_stock":ret(stock_close,21),"one_month_etf":ret(close,21),
+            "three_month_stock":ret(stock_close,63),"three_month_etf":ret(close,63)}
+
+
 def thesis(data):
     i=data["info"]; t=data["technical"]; v=data["valuation"]; e=data["entries"]; sh=data["shield"]
     story=technical_story(t)
@@ -235,6 +304,25 @@ def thesis(data):
     st.markdown("### What the financials actually say")
     for heading, explanation in fundamentals_story(m,i):
         st.markdown(f"**{heading}:** {explanation}")
+    st.markdown("### Financial history — reported figures")
+    financial_history=financial_history_frame(data)
+    if not financial_history.empty:
+        st.dataframe(financial_history,use_container_width=True)
+        st.caption("Figures shown in billions, using periods returned by the free provider. Annual history may be shorter or unavailable; quarterly fallback is not annualized.")
+    else:
+        st.info("Historical statement rows were not returned for this company. Verify annual reports and filings before drawing conclusions.")
+    st.markdown("### Industry and ETF context")
+    relative=sector_relative_context(data)
+    if relative:
+        c1,c2=st.columns(2)
+        c1.metric(f"{relative['etf']} · 1-month",f"{relative['one_month_etf']:+.1f}%")
+        c2.metric("Company · 1-month",f"{relative['one_month_stock']:+.1f}%",f"{relative['one_month_stock']-relative['one_month_etf']:+.1f} pp vs sector ETF")
+        c3,c4=st.columns(2)
+        c3.metric(f"{relative['etf']} · 3-month",f"{relative['three_month_etf']:+.1f}%")
+        c4.metric("Company · 3-month",f"{relative['three_month_stock']:+.1f}%",f"{relative['three_month_stock']-relative['three_month_etf']:+.1f} pp vs sector ETF")
+        st.caption(f"Broad sector proxy: {relative['sector']} ({relative['etf']}). ETF performance is context, not a direct peer comparison.")
+    else:
+        st.caption("Sector ETF comparison unavailable for this classification or data pull.")
     chart_verdict, business_verdict = investment_readout(t,m,v,e)
     st.markdown("### Putting the chart and business together")
     st.info("**Chart read:** " + chart_verdict)
@@ -314,7 +402,7 @@ def scan_market(count=DEFAULT_SCAN,mode="Investment"):
             if d:
                 t=d["technical"];v=d["valuation"]
                 chart_read = "Uptrend / constructive" if t.get("trend")=="Bullish" and t.get("return_1m",0)>0 else "Trying to improve" if t.get("trend")=="Improving" else "Weak / needs repair"
-                row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
+                row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Business Score":d.get("fundamental_score"),"Technical Score":t.get("technical_score"),"Momentum Score":t.get("momentum_score"),"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
                 if mode=="Swing" and not (np.isfinite(t.get("price",np.nan)) and np.isfinite(t.get("ma20",np.nan)) and t["price"]>t["ma20"] and t.get("return_1m",0)>0 and t.get("relative_volume",0)>=0.8): continue
                 rows.append(row)
         except Exception:pass
