@@ -51,7 +51,7 @@ def fundamentals_story(m, info):
     def cash(key):
         x=m.get(key,np.nan)
         if not np.isfinite(x): return "not available"
-        return f"\${x/1e9:.2f}B" if abs(x)>=1e9 else f"\${x/1e6:.1f}M"
+        return "$"+(f"{x/1e9:.2f}B" if abs(x)>=1e9 else f"{x/1e6:.1f}M")
     rev=m.get("revenue_growth",np.nan); earn=m.get("earnings_growth",np.nan)
     op=m.get("operating_margin",np.nan); margin=m.get("profit_margin",np.nan)
     roe=m.get("roe",np.nan); fcf=m.get("fcf",np.nan); debt=m.get("debt_equity",np.nan)
@@ -237,7 +237,7 @@ def scan_market(count=DEFAULT_SCAN,mode="Investment"):
                 t=d["technical"];v=d["valuation"]
                 chart_read = "Uptrend / constructive" if t.get("trend")=="Bullish" and t.get("return_1m",0)>0 else "Trying to improve" if t.get("trend")=="Improving" else "Weak / needs repair"
                 row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
-                if mode=="Swing" and (t.get("technical_score",0)<55): continue
+                if mode=="Swing" and not (np.isfinite(t.get("price",np.nan)) and np.isfinite(t.get("ma20",np.nan)) and t["price"]>t["ma20"] and t.get("return_1m",0)>0 and t.get("relative_volume",0)>=0.8): continue
                 rows.append(row)
         except Exception:pass
         progress.progress((n+1)/max(total,1))
