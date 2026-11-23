@@ -138,13 +138,106 @@ def fundamental_engine(info, statements=None):
     metrics["fundamental_status"] = "Evidence available" if available >= 6 else "Limited evidence" if available >= 3 else "Insufficient data"
     return metrics, round(score,1) if np.isfinite(score) else np.nan, round(coverage,1)
 
-def valuation_engine(info, price):
-    eps=fnum(info.get("forwardEps")); pe=fnum(info.get("forwardPE"))
-    if not np.isfinite(eps) or eps<=0 or not np.isfinite(price) or price<=0:
-        return {"fair_value":np.nan,"bear":np.nan,"base":np.nan,"bull":np.nan,"valuation_note":"Unavailable: positive forward EPS and a usable current price are required."}
-    base_multiple=min(max(pe if np.isfinite(pe) else 18,10),35)
-    bear=eps*max(8,base_multiple*.72); base=eps*base_multiple; bull=eps*min(45,base_multiple*1.25)
-    return {"fair_value":base,"bear":bear,"base":base,"bull":bull,"valuation_note":f"Forward EPS × current forward P/E ({base_multiple:.1f}x). Scenario multiples are illustrative sensitivity assumptions."}
+def valuation_engine(info, price, statements=None):
+    """
+    Scenario valuation with an explicit fallback:
+    1) forward EPS, then trailing EPS, using a sector reference P/E;
+    2) if earnings are unavailable/negative, revenue per share using a
+       conservative sector reference P/S range.
+    Multiples are transparent assumptions, not analyst consensus targets.
+    """
+    i = info if isinstance(info, dict) else {}
+    s = statements if isinstance(statements, dict) else {}
+    sector = str(i.get("sector", "")).lower()
+    eps_forward = fnum(i.get("forwardEps"))
+    eps_trailing = fnum(i.get("trailingEps"))
+    inputs = {
+        "current_price": fnum(price),
+        "forward_eps": eps_forward,
+        "trailing_eps": eps_trailing,
+        "forward_pe_reported": fnum(i.get("forwardPE")),
+        "price_to_sales_reported": fnum(i.get("priceToSalesTrailing12Months")),
+        "sector": i.get("sector", "Not provided"),
+        "industry": i.get("industry", "Not provided"),
+    }
+
+    pe_targets = [
+        (("technology", "communication services"), 25.0),
+        (("healthcare",), 22.0),
+        (("financial",), 14.0),
+        (("consumer defensive",), 20.0),
+        (("consumer cyclical",), 19.0),
+        (("industrials",), 20.0),
+        (("energy",), 14.0),
+        (("utilities",), 17.0),
+        (("real estate",), 18.0),
+        (("basic materials",), 16.0),
+    ]
+    ps_targets = [
+        (("technology", "communication services"), 4.0),
+        (("healthcare",), 3.5),
+        (("financial",), 2.0),
+        (("consumer defensive",), 1.5),
+        (("consumer cyclical",), 1.8),
+        (("industrials",), 2.0),
+        (("energy",), 1.5),
+        (("utilities",), 2.0),
+        (("real estate",), 3.0),
+        (("basic materials",), 2.0),
+    ]
+    def sector_multiple(table, default):
+        for terms, multiple in table:
+            if any(term in sector for term in terms):
+                return multiple
+        return default
+
+    if not np.isfinite(price) or price <= 0:
+        return {"fair_value":np.nan,"bear":np.nan,"base":np.nan,"bull":np.nan,
+                "valuation_note":"Unavailable: a valid current share price was not returned.",
+                "valuation_method":"Unavailable","valuation_inputs":inputs}
+
+    eps = eps_forward if np.isfinite(eps_forward) and eps_forward > 0 else eps_trailing
+    if np.isfinite(eps) and eps > 0:
+        target_pe = sector_multiple(pe_targets, 20.0)
+        bear = eps * target_pe * 0.75
+        base = eps * target_pe
+        bull = eps * target_pe * 1.25
+        method = "Earnings-based"
+        source = "forward EPS" if eps is eps_forward else "trailing EPS"
+        note = (f"{source} of ${eps:.2f} × sector reference P/E of {target_pe:.1f}×. "
+                "Bear/base/bull use 75%/100%/125% of that reference multiple. "
+                "This is a transparent screening estimate, not a price target from an analyst.")
+        inputs.update({"eps_used":eps,"eps_source":source,"reference_pe":target_pe})
+    else:
+        income = s.get("income", pd.DataFrame())
+        revenue_values = _statement_row(income, ["Total Revenue", "Operating Revenue", "Revenue"])
+        revenue = fnum(i.get("totalRevenue"))
+        if not np.isfinite(revenue) and revenue_values:
+            revenue = revenue_values[0]
+        shares = fnum(i.get("sharesOutstanding"))
+        if (not np.isfinite(shares) or shares <= 0) and np.isfinite(fnum(i.get("marketCap"))):
+            shares = fnum(i.get("marketCap")) / price
+        revenue_per_share = revenue / shares if np.isfinite(revenue) and revenue > 0 and np.isfinite(shares) and shares > 0 else np.nan
+        inputs.update({"revenue":revenue,"shares_outstanding":shares,"revenue_per_share":revenue_per_share})
+        if np.isfinite(revenue_per_share) and revenue_per_share > 0:
+            target_ps = sector_multiple(ps_targets, 2.0)
+            bear = revenue_per_share * target_ps * 0.65
+            base = revenue_per_share * target_ps
+            bull = revenue_per_share * target_ps * 1.40
+            method = "Sales-based (earnings unavailable)"
+            note = (f"Revenue per share of ${revenue_per_share:.2f} × sector reference P/S of {target_ps:.1f}×. "
+                    "Bear/base/bull use 65%/100%/140% of that reference multiple. "
+                    "Sales-based valuation is less reliable because it does not fully account for margins, debt or dilution.")
+            inputs.update({"reference_ps":target_ps,"revenue_source":"Yahoo profile or reported income statement"})
+        else:
+            return {"fair_value":np.nan,"bear":np.nan,"base":np.nan,"bull":np.nan,
+                    "valuation_note":"Unavailable: neither positive EPS nor usable revenue-per-share data was returned. Review the company’s reported statements; do not invent a valuation.",
+                    "valuation_method":"Insufficient data","valuation_inputs":inputs}
+
+    upside = (base / price - 1) * 100
+    return {"fair_value":base,"bear":bear,"base":base,"bull":bull,
+            "fair_value_upside":upside,"valuation_note":note,
+            "valuation_method":method,"valuation_inputs":inputs}
 
 def entry_engine(t):
     p=t.get("price",np.nan); a=t.get("atr",np.nan); m20=t.get("ma20",np.nan); m50=t.get("ma50",np.nan); low=t.get("low20",np.nan); high=t.get("high20",np.nan)
