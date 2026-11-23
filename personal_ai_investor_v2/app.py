@@ -47,6 +47,25 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"]{font-weight:700}
 [data-testid="stProgressBar"]>div>div{background:linear-gradient(90deg,#14b8a6,#3b82f6)}
 hr{border-color:#26394f}
 a{color:#5eead4!important}
+/* Consistent dark surfaces across native Streamlit widgets */
+.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"],[data-testid="stMainBlockContainer"]{background-color:#080f1c;color:#e6edf7}
+[data-testid="stVerticalBlock"]>div{color:inherit}
+[data-testid="stTabs"] [role="tablist"]{border-bottom:1px solid #263d56;gap:.35rem}
+[data-testid="stTabs"] button[role="tab"]{color:#a9bdd3;border-radius:9px 9px 0 0}
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#5eead4;border-bottom:2px solid #14b8a6}
+[data-baseweb="select"]>div,[data-baseweb="input"]>div,[data-baseweb="textarea"]>div{background:#101f32!important;border-color:#304a66!important;color:#edf5ff!important}
+[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"]{background:#14243a!important;border:1px solid #304a66!important;color:#edf5ff!important}
+[role="option"]{background:#14243a!important;color:#edf5ff!important}
+[role="option"]:hover,[aria-selected="true"]{background:#1b3850!important}
+[data-testid="stDateInput"] input,[data-testid="stTimeInput"] input,[data-testid="stTextArea"] textarea{background:#101f32!important;color:#edf5ff!important;border:1px solid #304a66!important}
+[data-testid="stCheckbox"] label,[data-testid="stRadio"] label,[data-testid="stSlider"] label{color:#d3deec!important}
+[data-testid="stExpander"] summary,[data-testid="stExpander"] details{background:#111f32!important;color:#e6edf7!important}
+[data-testid="stAlert"] p,[data-testid="stAlert"] div{color:#e6edf7}
+[data-testid="stDataFrame"],[data-testid="stTable"]{background:#101d2e!important}
+[data-testid="stCode"],pre,code{background:#101d2e!important;color:#dce9f7!important;border-color:#263d56!important}
+[data-testid="stPlotlyChart"]{background:#0d192b;border:1px solid #263d56;border-radius:13px;padding:.35rem}
+iframe{color-scheme:dark}
+::selection{background:rgba(20,184,166,.35);color:#fff}
 @media(max-width:700px){.hero{padding:1.25rem}.hero h1{font-size:1.65rem}.block-container{padding-left:1rem;padding-right:1rem}}
 </style>
 <div class="hero"><div class="kicker">Independent research desk · Version 2.0</div><h1>PERSONAL AI INVESTOR</h1><p>Discover exceptional businesses. Challenge the evidence. Find attractive prices before chasing becomes the only option.</p></div>
