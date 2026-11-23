@@ -4,6 +4,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import numpy as np
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
 from config import APP_NAME, APP_TAGLINE, DEFAULT_SCAN, MAX_SCAN, SECTOR_ETFS
 from data.market_data import discover_universe, history, info, sector_etf_history
 from research.company_research import research_company
@@ -661,6 +662,49 @@ def render_industry_discovery():
             "Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%"),
             "Distance vs Pullback Zone":st.column_config.NumberColumn(format="%.1f%%")
         })
+        st.markdown("### Stock vs. industry ETF — relative-strength chart")
+        chart_ticker=st.selectbox("Choose a stock to compare", [x["Ticker"] for x in reports], key="industry_rs_chart_pick")
+        with st.spinner(f"Loading six months of {chart_ticker} and {etf} price history..."):
+            stock_hist=history(chart_ticker,"6mo")
+            etf_hist=history(etf,"6mo")
+        if stock_hist is not None and etf_hist is not None and not stock_hist.empty and not etf_hist.empty and "Close" in stock_hist and "Close" in etf_hist:
+            compare=pd.concat([
+                stock_hist["Close"].rename(chart_ticker),
+                etf_hist["Close"].rename(etf)
+            ],axis=1).dropna()
+            if len(compare)>=10:
+                indexed=compare.div(compare.iloc[0]).mul(100)
+                relative=(compare[chart_ticker]/compare[etf])
+                relative=relative.div(relative.iloc[0]).mul(100)
+                chart=go.Figure()
+                chart.add_trace(go.Scatter(x=indexed.index,y=indexed[chart_ticker],mode="lines",name=f"{chart_ticker} (indexed)",line=dict(width=2.7)))
+                chart.add_trace(go.Scatter(x=indexed.index,y=indexed[etf],mode="lines",name=f"{etf} (indexed)",line=dict(width=2.2)))
+                chart.update_layout(
+                    title=f"{chart_ticker} vs. {etf} — price performance",
+                    xaxis_title="Date",yaxis_title="Growth of 100",
+                    template="plotly_dark",height=390,hovermode="x unified",
+                    legend=dict(orientation="h",y=1.12),
+                    margin=dict(l=15,r=15,t=65,b=15)
+                )
+                st.plotly_chart(chart,use_container_width=True)
+                rs_chart=go.Figure()
+                rs_chart.add_trace(go.Scatter(x=relative.index,y=relative,mode="lines",name=f"{chart_ticker}/{etf} relative strength",line=dict(width=2.7)))
+                rs_chart.add_hline(y=100,line_dash="dash",line_color="gray",annotation_text="Starting relative strength")
+                rs_chart.update_layout(
+                    title=f"{chart_ticker} relative strength vs. {etf}",
+                    xaxis_title="Date",yaxis_title="Relative strength (start = 100)",
+                    template="plotly_dark",height=330,hovermode="x unified",
+                    margin=dict(l=15,r=15,t=65,b=15)
+                )
+                st.plotly_chart(rs_chart,use_container_width=True)
+                latest_rs=float(relative.iloc[-1])
+                st.metric("Six-month relative-strength change",f"{latest_rs-100:+.1f}%",help="Above 0% means the stock has outperformed the industry ETF since the start of the displayed period; below 0% means it has underperformed.")
+                st.caption("The relative-strength line is the stock's price divided by the ETF's price, indexed to 100 at the start. A rising line means the stock is outperforming the ETF; a falling line means it is lagging. This is price-relative performance, not an RSI reading or a buy signal.")
+            else:
+                st.info("Not enough overlapping daily price history to draw a reliable comparison.")
+        else:
+            st.info("Price history for the selected stock or industry ETF is unavailable right now.")
+
         pick=st.selectbox("Open full company report",[x["Ticker"] for x in reports],key="industry_pick")
         if st.button("Build full investment report",key="industry_full_report"):
             report=research_company(pick)
