@@ -19,6 +19,14 @@ EDUCATION = {
     "Wall Street Mojo": ("https://www.wallstreetmojo.com/", "Accounting, valuation and financial-modeling explainers"),
     "Early Retirement Now": ("https://earlyretirementnow.com/", "Detailed retirement math and safe-withdrawal research"),
     "Financial Mentor": ("https://financialmentor.com/calculator", "Financial planning and retirement calculators"),
+    "YNAB": ("https://www.ynab.com/", "Budgeting education and paid budgeting software"),
+    "Empower": ("https://www.empower.com/", "Net-worth and investment tracking; account linking may be required"),
+    "Credit Sesame": ("https://www.creditsesame.com/", "Credit monitoring and credit education"),
+    "MoneySavingExpert": ("https://www.moneysavingexpert.com/", "Consumer finance guides, especially UK products"),
+    "Numbeo": ("https://www.numbeo.com/cost-of-living/", "Crowdsourced cost-of-living comparisons"),
+    "DQYDJ": ("https://dqydj.com/", "Income and wealth percentile calculators"),
+    "Networthify": ("https://networthify.com/", "Financial independence timeline calculator"),
+    "FIRECalc": ("https://www.firecalc.com/", "Retirement simulations using historical market sequences"),
 }
 RESEARCH = {
     "SEC EDGAR": ("https://www.sec.gov/edgar/search/", "Official US company filings and disclosures"),
@@ -38,6 +46,15 @@ RESEARCH = {
     "JustETF": ("https://www.justetf.com/", "ETF research for European-listed funds"),
     "Trustnet": ("https://www.trustnet.com/", "UK fund research and comparisons"),
     "Xplained": ("https://xplaind.com/", "Finance and accounting calculators and explainers"),
+    "Wise": ("https://wise.com/", "International transfers and currency tools"),
+    "XE": ("https://www.xe.com/", "Currency rates and international transfer tools"),
+    "Fundrise": ("https://fundrise.com/", "Private real-estate investing; review eligibility, liquidity and fees"),
+    "eToro": ("https://www.etoro.com/", "Brokerage/social investing; availability varies by country"),
+    "DEGIRO": ("https://www.degiro.com/", "European brokerage platform"),
+    "Rate My Investments": ("https://ratemyinvestments.com/", "Investment product comparison resource; verify methodology"),
+    "Finder": ("https://www.finder.com/", "Financial product comparisons across markets"),
+    "Wisser": ("https://wisser.com/", "Financial product comparison resource; verify current coverage"),
+    "World Government Bonds": ("https://www.worldgovernmentbonds.com/", "Sovereign bond yield comparisons"),
 }
 MACRO = {
     "US inflation (CPI)": "https://fred.stlouisfed.org/series/CPIAUCSL",
