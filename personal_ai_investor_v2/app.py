@@ -8,7 +8,7 @@ from config import APP_NAME, APP_TAGLINE, DEFAULT_SCAN, MAX_SCAN, SECTOR_ETFS
 from data.market_data import discover_universe, history, sector_etf_history
 from research.company_research import research_company
 from charts.price_chart import build_chart
-from storage.history import record_research, log_frame
+from storage.history import record_research, log_frame\nfrom engines.agent_committee import run_committee
 
 st.set_page_config(page_title=APP_NAME,page_icon="📈",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""
@@ -71,7 +71,7 @@ iframe{color-scheme:dark}
 <div class="hero"><div class="kicker">Independent research desk · Version 2.0</div><h1>PERSONAL AI INVESTOR</h1><p>Discover exceptional businesses. Challenge the evidence. Find attractive prices before chasing becomes the only option.</p></div>
 """,unsafe_allow_html=True)
 
-PAGES=["Command Center","Market Opportunities","Company Research","Entry & Risk","Swing Research","Research History","Methodology"]
+PAGES=["Command Center","Market Opportunities","Company Research","Entry & Risk","Swing Research","AI Investment Committee","Research History","Methodology"]
 with st.sidebar:
     st.markdown("### PERSONAL AI INVESTOR")
     page=st.radio("Research workspace",PAGES,label_visibility="collapsed")
@@ -401,6 +401,45 @@ elif page=="Swing Research":
             d=research_company(pick);st.session_state["active_report"]=d
         if st.session_state.get("active_report"):thesis(st.session_state["active_report"])
     else:st.info("Run the swing scan to identify current setups.")
+
+elif page=="AI Investment Committee":
+    st.markdown("## AI Investment Committee")
+    st.write("A coordinated research review. Each specialist evaluates the same company data, then the coordinator reconciles the evidence.")
+    ticker=st.text_input("Company ticker",placeholder="NVDA, MU, AMD, AMZN, SOFI",key="committee_ticker").strip().upper()
+    if st.button("Convene investment committee",type="primary") and ticker:
+        with st.spinner("Collecting shared market, financial, valuation and technical evidence..."):
+            d=research_company(ticker)
+        if d:
+            st.session_state["committee_report"]=d
+            record_research(d)
+        else:
+            st.error("Insufficient price history returned for this ticker.")
+    d=st.session_state.get("committee_report")
+    if d:
+        c=run_committee(d); t=d["technical"]; v=d["valuation"]
+        st.markdown("---")
+        st.markdown(f"### {d['symbol']} · Committee verdict")
+        st.subheader(c["verdict"])
+        cols=st.columns(4)
+        cols[0].metric("Last price",money(t.get("price")))
+        cols[1].metric("Technical score",val(t.get("technical_score"),"/100"))
+        cols[2].metric("Business score",val(d.get("fundamental_score"),"/100"))
+        cols[3].metric("Base reference",money(v.get("base")),val(v.get("fair_value_upside"),"%"))
+        st.caption("Scores are diagnostics, not probabilities of success.")
+        st.markdown("### Specialist reports")
+        for name, finding in c["agents"]:
+            with st.expander(name,expanded=True):
+                st.write(finding)
+        st.markdown("### Entry map")
+        level_cols=st.columns(4)
+        for idx,(label,value) in enumerate(c["levels"].items()):
+            level_cols[idx%4].metric(label,money(value))
+        st.markdown("### Coordinator's decision")
+        st.info("The committee does not force a buy signal. Conflicting evidence, missing fundamentals or an extended chart should lead to a wait.")
+        st.caption(c["limitations"])
+        if st.button("Refresh committee analysis"):
+            st.cache_data.clear()
+            st.rerun()
 
 elif page=="Research History":
     st.markdown("## Research History")
