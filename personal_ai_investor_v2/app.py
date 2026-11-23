@@ -38,8 +38,73 @@ def val(x,suffix=""):
 def company_name(d):return d["info"].get("longName") or d["info"].get("shortName") or d["symbol"]
 def research_table(rows):
     if not rows: st.info("No candidates returned. Free screeners can be rate-limited or incomplete; try again later or use Company Research.");return
-    df=pd.DataFrame(rows).sort_values("Opportunity Rank",ascending=False)
-    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Opportunity Rank":st.column_config.ProgressColumn(min_value=0,max_value=100),"Business Quality":st.column_config.ProgressColumn(min_value=0,max_value=100),"Technical Strength":st.column_config.ProgressColumn(min_value=0,max_value=100),"Data Coverage":st.column_config.ProgressColumn(min_value=0,max_value=100),"Price":st.column_config.NumberColumn(format="$%.2f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%")})
+    df=pd.DataFrame(rows)
+    preferred=["Ticker","Company","Price","1W Return","1M Return","3M Return","RSI","Trend","Chart Read","Fair Value Upside","Desk Flags"]
+    df=df[[c for c in preferred if c in df.columns]]
+    st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Price":st.column_config.NumberColumn(format="$%.2f"),"1W Return":st.column_config.NumberColumn(format="%.1f%%"),"1M Return":st.column_config.NumberColumn(format="%.1f%%"),"3M Return":st.column_config.NumberColumn(format="%.1f%%"),"RSI":st.column_config.NumberColumn(format="%.1f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%")})
+
+
+def fundamentals_story(m, info):
+    def pct(key):
+        x=m.get(key,np.nan)
+        return f"{x*100:.1f}%" if np.isfinite(x) else "not available"
+    def cash(key):
+        x=m.get(key,np.nan)
+        if not np.isfinite(x): return "not available"
+        return f"\${x/1e9:.2f}B" if abs(x)>=1e9 else f"\${x/1e6:.1f}M"
+    rev=m.get("revenue_growth",np.nan); earn=m.get("earnings_growth",np.nan)
+    op=m.get("operating_margin",np.nan); margin=m.get("profit_margin",np.nan)
+    roe=m.get("roe",np.nan); fcf=m.get("fcf",np.nan); debt=m.get("debt_equity",np.nan)
+    pe=m.get("forward_pe",np.nan); peg=m.get("peg",np.nan)
+    parts=[]
+    if np.isfinite(rev):
+        parts.append(("Growth",f"Revenue growth is {pct('revenue_growth')}. " + ("That is a strong growth rate." if rev>=.20 else "That is moderate growth; check whether it is accelerating." if rev>=.05 else "Growth is weak or negative, so the company needs a clear explanation for the slowdown.")))
+    else: parts.append(("Growth","Revenue growth was not returned, so the growth story cannot be confirmed from this data pull."))
+    if np.isfinite(earn):
+        parts.append(("Earnings",f"Earnings growth is {pct('earnings_growth')}. " + ("Profits are growing at a strong pace." if earn>=.15 else "Profit growth is modest or under pressure; compare it with revenue growth." if earn>=0 else "Earnings are declining; determine whether this is temporary investment or deteriorating economics.")))
+    else: parts.append(("Earnings","Earnings growth is unavailable; don't assume revenue growth is translating into profits."))
+    if np.isfinite(op) or np.isfinite(margin):
+        sentence="Operating margin is "+pct("operating_margin") if np.isfinite(op) else "Operating margin is unavailable"
+        sentence += "; net profit margin is "+pct("profit_margin") if np.isfinite(margin) else "; net profit margin is unavailable"
+        if np.isfinite(op): sentence += ". " + ("The operating margin suggests meaningful pricing power or operating leverage." if op>=.20 else "The operating margin is positive but needs comparison with peers and its own history." if op>0 else "Negative operating margin means the core operation is not currently profitable.")
+        parts.append(("Profitability",sentence))
+    else: parts.append(("Profitability","Margin data is missing, so profitability quality cannot be established."))
+    if np.isfinite(roe):
+        parts.append(("Returns",f"Return on equity is {pct('roe')}. " + ("This is a strong reported return on shareholder equity." if roe>=.15 else "This is a moderate or weak return; compare with peers and leverage.")))
+    if np.isfinite(fcf):
+        parts.append(("Cash generation",f"Reported free cash flow field is {cash('fcf')}. " + ("Positive cash generation gives the business more flexibility." if fcf>0 else "Negative cash flow means the company is consuming cash; determine whether this is investment or stress.")))
+    else: parts.append(("Cash generation","Free cash flow is unavailable. We should not infer cash generation from earnings alone."))
+    if np.isfinite(debt):
+        parts.append(("Balance sheet",f"Debt-to-equity is {debt:.1f}%. " + ("Leverage appears relatively contained on this measure." if debt<50 else "Leverage deserves attention; compare debt maturities, interest expense and cash flow." if debt<150 else "Leverage is high on this measure and could increase financial risk.")))
+    else: parts.append(("Balance sheet","Debt-to-equity was not returned; review the balance sheet and debt maturities before drawing a conclusion."))
+    if np.isfinite(pe):
+        parts.append(("Valuation",f"Forward P/E is {pe:.1f}×. " + ("The multiple is relatively modest, but only attractive if earnings estimates are credible." if pe<20 else "The market is paying a growth premium; the business must deliver to justify it." if pe<35 else "The market is pricing in substantial future success, leaving less room for disappointment.")))
+    else: parts.append(("Valuation","Forward P/E is unavailable, so the current earnings multiple cannot be assessed."))
+    if np.isfinite(peg): parts.append(("Growth-adjusted valuation",f"PEG is {peg:.2f}×. Treat this as a rough cross-check, not a standalone valuation decision."))
+    return parts
+
+def investment_readout(t, m, v, e):
+    tech=t.get("technical_score",np.nan); status=m.get("fundamental_status","Insufficient data")
+    rev=m.get("revenue_growth",np.nan); earn=m.get("earnings_growth",np.nan); fcf=m.get("fcf",np.nan)
+    price=t.get("price",np.nan); upside=v.get("fair_value_upside",np.nan)
+    if np.isfinite(tech) and tech>=70 and np.isfinite(price) and np.isfinite(t.get("ma50",np.nan)) and price>t["ma50"]:
+        chart_verdict="The chart is constructive. Price strength is supported by technical evidence, but check whether it is near support or already extended before entering."
+    elif np.isfinite(tech) and tech<45:
+        chart_verdict="The chart is weak. The business may still deserve research, but price action does not yet support an aggressive entry."
+    else:
+        chart_verdict="The chart is mixed or developing. Wait for confirmation that price can hold support and reclaim resistance."
+    if status=="Insufficient data":
+        business_verdict="The business cannot be rated confidently from the available free-data fields. Missing information is not proof of a bad company."
+    elif np.isfinite(rev) and rev>0 and np.isfinite(earn) and earn>0 and np.isfinite(fcf) and fcf>0:
+        business_verdict="The available figures show revenue and earnings growth alongside positive free cash flow. That is promising; verify durability, margins, debt and peer valuation."
+    elif np.isfinite(rev) and rev>0 and (not np.isfinite(earn) or earn<=0):
+        business_verdict="Sales are growing, but earnings are not confirming the growth yet. The key question is whether margins can expand or costs are structurally high."
+    elif np.isfinite(fcf) and fcf<0:
+        business_verdict="Cash generation is a concern. Determine whether negative free cash flow reflects deliberate growth investment or a business model that consumes too much cash."
+    else:
+        business_verdict="The fundamentals are mixed. The individual growth, profitability and balance-sheet facts below matter more than a composite grade."
+    valuation_verdict=f" The simplified fair-value model indicates {upside:+.1f}% upside/downside." if np.isfinite(upside) else " The simplified valuation model is unavailable, so price attractiveness still needs independent work."
+    return chart_verdict, business_verdict+valuation_verdict
 
 def technical_story(t):
     px=t.get("price",np.nan); m20=t.get("ma20",np.nan); m50=t.get("ma50",np.nan); m200=t.get("ma200",np.nan)
@@ -114,6 +179,13 @@ def thesis(data):
     for idx,(label,key,suffix) in enumerate(metric_labels):
         x=m.get(key,np.nan); display=money(x) if suffix=="$" else (f"{x*100:.1f}%" if suffix=="%" and np.isfinite(x) else f"{x:.1f}{suffix}" if np.isfinite(x) else "N/A")
         cols[idx%4].metric(label,display)
+    st.markdown("### What the financials actually say")
+    for heading, explanation in fundamentals_story(m,i):
+        st.markdown(f"**{heading}:** {explanation}")
+    chart_verdict, business_verdict = investment_readout(t,m,v,e)
+    st.markdown("### Putting the chart and business together")
+    st.info("**Chart read:** " + chart_verdict)
+    st.info("**Business and valuation read:** " + business_verdict)
     status=m.get("fundamental_status","Insufficient data")
     available=int(m.get("metrics_available",0) or 0); expected=int(m.get("metrics_expected",0) or 0)
     if status=="Insufficient data":
@@ -163,7 +235,8 @@ def scan_market(count=DEFAULT_SCAN,mode="Investment"):
             d=research_company(symbol)
             if d:
                 t=d["technical"];v=d["valuation"]
-                row={"Ticker":symbol,"Company":company_name(d),"Opportunity Rank":d["opportunity_score"],"Business Quality":d["fundamental_score"],"Technical Strength":t.get("technical_score"),"Data Coverage":d["fundamental_coverage"],"Price":t.get("price"),"Fair Value Upside":v.get("fair_value_upside"),"1M Return":t.get("return_1m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Desk Flags":"; ".join(d["shield"]["flags"])}
+                chart_read = "Uptrend / constructive" if t.get("trend")=="Bullish" and t.get("return_1m",0)>0 else "Trying to improve" if t.get("trend")=="Improving" else "Weak / needs repair"
+                row={"Ticker":symbol,"Company":company_name(d),"Price":t.get("price"),"1W Return":t.get("return_1w"),"1M Return":t.get("return_1m"),"3M Return":t.get("return_3m"),"RSI":t.get("rsi"),"Trend":t.get("trend"),"Chart Read":chart_read,"Fair Value Upside":v.get("fair_value_upside"),"Desk Flags":"; ".join(d["shield"]["flags"])}
                 if mode=="Swing" and (t.get("technical_score",0)<55): continue
                 rows.append(row)
         except Exception:pass
@@ -202,7 +275,7 @@ if page=="Command Center":
 
 elif page=="Market Opportunities":
     st.markdown("## Market Opportunities")
-    st.write("Discover across sectors, then rank companies using business quality, technical structure, valuation and catalyst context.")
+    st.write("Discover companies, then inspect the actual chart, business fundamentals and valuation. The scan is a starting point—not a score-based verdict.")
     count=st.select_slider("Companies to evaluate",options=[25,40,60,80,100,125,150],value=DEFAULT_SCAN,key="opp_count")
     if st.button("Discover opportunities",type="primary"):
         with st.spinner("Evaluating dynamic market candidates..."):rows,cov=scan_market(count)
@@ -263,11 +336,11 @@ elif page=="Research History":
         st.download_button("Download research history CSV",df.to_csv(index=False).encode(),"research_history.csv","text/csv")
 
 else:
-    st.markdown("## Scoring & Methodology")
+    st.markdown("## Research Methodology")
     st.markdown("### Independent research engines")
     st.write("Market Scout discovers candidates through Yahoo Finance screeners and a rotating sample of public exchange symbol directories. Business Quality scores reported growth, margins, returns, free cash flow, leverage and valuation inputs. Technical Intelligence scores trend, momentum, RSI, volume and price structure. Valuation uses a simplified forward-EPS multiple model when data permits. Shield highlights data gaps and screen-level risks.")
-    st.markdown("### Opportunity Rank")
-    st.write("Starting weights: Business Quality 35%, Technical Strength 35%, Valuation Attractiveness 20%, Catalyst Context 10%. When a component is unavailable, the rank renormalizes the available weights. Missing data affects confidence and is displayed separately; it is not silently treated as zero.")
+    st.markdown("### How to read a company report")
+    st.write("Start with the candlestick chart and moving averages. Read trend, momentum, RSI, relative volume, support, resistance and invalidation together. Then inspect revenue and earnings growth, margins, cash generation, leverage and valuation. The final readout explains where the chart and business agree—or disagree. Screening scores are not investment conclusions.")
     st.markdown("### Important limitations")
     st.write("This is a research and education tool, not individualized financial advice. Yahoo Finance data can be delayed, incomplete, rate-limited or changed without notice. Dynamic exchange-directory sampling is not an exhaustive real-time scan. Financial metrics are not independently audited here. Bull/base/bear scenarios are sensitivity estimates, not price forecasts. No orders are placed and no brokerage is connected.")
     st.markdown("### What the system does not do")
