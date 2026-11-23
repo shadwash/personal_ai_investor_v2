@@ -63,7 +63,24 @@ def thesis(data):
     for idx,(label,key,suffix) in enumerate(metric_labels):
         x=m.get(key,np.nan); display=money(x) if suffix=="$" else (f"{x*100:.1f}%" if suffix=="%" and np.isfinite(x) else f"{x:.1f}{suffix}" if np.isfinite(x) else "N/A")
         cols[idx%4].metric(label,display)
-    if data["fundamental_coverage"]<55: st.warning("Limited financial data coverage. Missing values are not treated as zero; verify filings before relying on the business score.")
+    status=m.get("fundamental_status","Insufficient data")
+    available=int(m.get("metrics_available",0) or 0)
+    expected=int(m.get("metrics_expected",0) or 0)
+    if status=="Insufficient data":
+        st.error(f"Business Quality: NOT RATED — only {available} of {expected} core metrics were retrieved. This is a data limitation, not evidence that the company is a weak business.")
+    elif status=="Limited evidence":
+        st.warning(f"Business Quality: PROVISIONAL — {available} of {expected} core metrics retrieved. Treat the score as preliminary until more financial evidence is available.")
+    else:
+        st.success(f"Business Quality: EVIDENCE AVAILABLE — {available} of {expected} core metrics retrieved.")
+    sources=m.get("metric_sources",{})
+    with st.expander("Financial data sources and coverage"):
+        source_rows=[]
+        for label,key,suffix in metric_labels:
+            x=m.get(key,np.nan)
+            source_rows.append({"Metric":label,"Retrieved":bool(np.isfinite(x)),"Source":sources.get(key) or "Not returned by data provider"})
+        st.dataframe(pd.DataFrame(source_rows),use_container_width=True,hide_index=True)
+        if data.get("fundamental_data_errors"):
+            st.caption("Provider retrieval notes: " + " · ".join(data["fundamental_data_errors"][:6]))
     st.markdown("### Technical intelligence")
     st.write(f"**Trend:** {t.get('trend','N/A')} · **Momentum score:** {val(t.get('momentum_score'))} · **RSI:** {val(t.get('rsi'))} · **Relative volume:** {val(t.get('relative_volume'),'x')}")
     with st.expander("Chart display controls",expanded=True):
