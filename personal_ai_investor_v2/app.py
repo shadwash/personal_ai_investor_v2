@@ -8,7 +8,8 @@ from config import APP_NAME, APP_TAGLINE, DEFAULT_SCAN, MAX_SCAN, SECTOR_ETFS
 from data.market_data import discover_universe, history, sector_etf_history
 from research.company_research import research_company
 from charts.price_chart import build_chart
-from storage.history import record_research, log_frame\nfrom engines.agent_committee import run_committee
+from storage.history import record_research, log_frame
+from engines.agent_committee import run_committee
 
 st.set_page_config(page_title=APP_NAME,page_icon="📈",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""
