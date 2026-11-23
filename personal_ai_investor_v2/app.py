@@ -41,22 +41,73 @@ def research_table(rows):
     df=pd.DataFrame(rows).sort_values("Opportunity Rank",ascending=False)
     st.dataframe(df,use_container_width=True,hide_index=True,height=min(560,42+35*min(len(df),14)),column_config={"Opportunity Rank":st.column_config.ProgressColumn(min_value=0,max_value=100),"Business Quality":st.column_config.ProgressColumn(min_value=0,max_value=100),"Technical Strength":st.column_config.ProgressColumn(min_value=0,max_value=100),"Data Coverage":st.column_config.ProgressColumn(min_value=0,max_value=100),"Price":st.column_config.NumberColumn(format="$%.2f"),"Fair Value Upside":st.column_config.NumberColumn(format="%.1f%%")})
 
+def technical_story(t):
+    px=t.get("price",np.nan); m20=t.get("ma20",np.nan); m50=t.get("ma50",np.nan); m200=t.get("ma200",np.nan)
+    rsi=t.get("rsi",np.nan); rv=t.get("relative_volume",np.nan)
+    r1=t.get("return_1w",np.nan); r1m=t.get("return_1m",np.nan); r3=t.get("return_3m",np.nan)
+    high=t.get("high20",np.nan); low=t.get("low20",np.nan)
+    above20=np.isfinite(px) and np.isfinite(m20) and px>m20
+    above50=np.isfinite(px) and np.isfinite(m50) and px>m50
+    above200=np.isfinite(px) and np.isfinite(m200) and px>m200
+    aligned=np.isfinite(m20) and np.isfinite(m50) and np.isfinite(m200) and m20>m50>m200
+    if aligned and above20:
+        trend_text="The primary trend is constructive: price is above its 20-, 50- and 200-day averages, and the averages are stacked bullishly."
+    elif above50 and above200:
+        trend_text="The intermediate and long-term trend remain constructive, but the short-term picture needs confirmation."
+    elif above20 and not above50:
+        trend_text="Price is trying to improve above its 20-day average, but it has not reclaimed the 50-day trend line. This is an early repair attempt, not a confirmed uptrend."
+    elif not above200:
+        trend_text="Price remains below its 200-day average. The larger trend is damaged; any bounce should be treated cautiously until important averages are reclaimed."
+    else:
+        trend_text="The moving-average picture is mixed. Wait for price and the key averages to align before treating the move as a durable trend."
+    momentum_text = ("Momentum is accelerating across the measured periods." if np.isfinite(r1m) and np.isfinite(r3) and r1m>0 and r3>0 else "Short-term momentum is positive, but the larger three-month move is still negative." if np.isfinite(r1m) and np.isfinite(r3) and r1m>0>=r3 else "Momentum is fading or negative; look for a higher low and a reclaim of short-term resistance before assuming a reversal." if np.isfinite(r1m) and r1m<=0 else "Momentum readings are mixed or incomplete.")
+    if np.isfinite(rsi):
+        rsi_text=f"RSI is {rsi:.1f} — " + ("overbought; avoid treating strength alone as a fresh entry signal." if rsi>=70 else "oversold; watch for stabilization rather than buying weakness blindly." if rsi<=30 else "in a constructive middle range." if 50<=rsi<70 else "below the 50 line, so momentum has not fully turned positive.")
+    else:rsi_text="RSI is unavailable from the current price history."
+    volume_text=f"Recent volume is {rv:.2f}× its 50-day average." if np.isfinite(rv) else "Relative volume is unavailable."
+    if np.isfinite(rv) and rv>=1.5: volume_text += " Participation is notably elevated; check whether volume confirms an advance or signals distribution."
+    elif np.isfinite(rv) and rv<0.7: volume_text += " Participation is light, so breakouts may lack conviction."
+    proximity = (high/px-1)*100 if np.isfinite(high) and np.isfinite(px) and px>0 else np.nan
+    structure_text=f"Price is {proximity:.1f}% below its 20-day high." if np.isfinite(proximity) else "Recent price structure is incomplete."
+    return {"trend":trend_text,"momentum":momentum_text,"rsi":rsi_text,"volume":volume_text,"structure":structure_text}
+
 def thesis(data):
     i=data["info"]; t=data["technical"]; v=data["valuation"]; e=data["entries"]; sh=data["shield"]
+    story=technical_story(t)
     st.markdown(f"## {company_name(data)} ({data['symbol']})")
     st.caption(f"{i.get('sector','Sector unavailable')} · {i.get('industry','Industry unavailable')} · {i.get('exchange','Exchange unavailable')}")
-    a,b,c,d=st.columns(4); a.metric("Opportunity rank",val(data["opportunity_score"]));b.metric("Business quality",val(data["fundamental_score"]));c.metric("Technical strength",val(t.get("technical_score")));d.metric("Data coverage",val(data["fundamental_coverage"],"%"))
-    st.markdown("### Investment desk conclusion")
-    if sh["flags"]: st.warning("Shield review: " + " · ".join(sh["flags"]))
-    else: st.success("No major screen-level risk flags. This is not a guarantee of safety or investment quality.")
-    if data["fundamental_score"]>=70 and t.get("technical_score",0)>=65 and (not np.isfinite(v.get("fair_value_upside",np.nan)) or v["fair_value_upside"]>0):
-        st.markdown("**Desk view:** Business and chart evidence are constructive. Check the valuation assumptions and entry levels before considering an investment.")
-    elif data["fundamental_score"]>=65 and t.get("technical_score",0)<55:
-        st.markdown("**Desk view:** Business quality may justify further research, but the chart is not yet confirming. Patience may offer a better entry.")
-    elif t.get("technical_score",0)>=70 and (not np.isfinite(data["fundamental_score"]) or data["fundamental_score"]<55):
-        st.markdown("**Desk view:** Technical interest is present, but business quality or data coverage needs more work. Treat as speculative until verified.")
-    else: st.markdown("**Desk view:** Mixed evidence. Keep on research radar only if the underlying thesis interests you; do not force an entry.")
-    st.markdown("### Business and financial evidence")
+    a,b,c,d=st.columns(4)
+    a.metric("Current price",money(t.get("price")))
+    b.metric("1-month move",val(t.get("return_1m"),"%"))
+    c.metric("3-month move",val(t.get("return_3m"),"%"))
+    d.metric("RSI (14)",val(t.get("rsi")))
+    st.markdown("### Price action — read the chart first")
+    with st.expander("Chart display controls",expanded=True):
+        x,y=st.columns(2); show_entry=x.checkbox("Show entry and risk levels",True,key=f"ent_{data['symbol']}");show_val=y.checkbox("Show valuation reference levels",False,key=f"val_{data['symbol']}")
+    st.plotly_chart(build_chart(data,show_entry,show_val),use_container_width=True)
+    st.markdown("### What the chart is telling us")
+    st.markdown(f"**Trend:** {story['trend']}")
+    st.markdown(f"**Momentum:** {story['momentum']}")
+    st.markdown(f"**RSI:** {story['rsi']}")
+    st.markdown(f"**Volume:** {story['volume']}")
+    st.markdown(f"**Price structure:** {story['structure']}")
+    st.markdown("### Key technical levels")
+    level_rows=[
+        ("20-day moving average",t.get("ma20")),("50-day moving average",t.get("ma50")),("200-day moving average",t.get("ma200")),
+        ("Recent 20-day resistance",t.get("high20")),("Recent 20-day support",t.get("low20")),
+        ("Early-entry zone",e.get("early_low")),("Pullback zone",e.get("pullback_low")),("Breakout confirmation",e.get("breakout")),
+        ("Invalidation level",e.get("invalidation")),("Technical target 1",e.get("technical_target_1")),("Technical target 2",e.get("technical_target_2"))
+    ]
+    st.dataframe(pd.DataFrame([{"Level":k,"Price":money(x)} for k,x in level_rows]),use_container_width=True,hide_index=True)
+    st.markdown("### The investment story")
+    summary=i.get("longBusinessSummary")
+    if summary: st.write(summary)
+    else: st.caption("Company description was not returned by the data provider.")
+    st.markdown("**Why it may deserve attention**")
+    if data["news"]:
+        for headline in data["news"][:8]: st.markdown(f"- {headline}")
+    else: st.caption("No current headlines returned by the free news source. Check company filings and earnings updates before making a decision.")
+    st.markdown("### Business quality — evidence, not a mystery score")
     m=data["fundamental_metrics"]
     metric_labels=[("Revenue growth","revenue_growth","%"),("Earnings growth","earnings_growth","%"),("Operating margin","operating_margin","%"),("Profit margin","profit_margin","%"),("Return on equity","roe","%"),("Free cash flow","fcf","$"),("Debt / equity","debt_equity",""),("Forward P/E","forward_pe","x")]
     cols=st.columns(4)
@@ -64,14 +115,13 @@ def thesis(data):
         x=m.get(key,np.nan); display=money(x) if suffix=="$" else (f"{x*100:.1f}%" if suffix=="%" and np.isfinite(x) else f"{x:.1f}{suffix}" if np.isfinite(x) else "N/A")
         cols[idx%4].metric(label,display)
     status=m.get("fundamental_status","Insufficient data")
-    available=int(m.get("metrics_available",0) or 0)
-    expected=int(m.get("metrics_expected",0) or 0)
+    available=int(m.get("metrics_available",0) or 0); expected=int(m.get("metrics_expected",0) or 0)
     if status=="Insufficient data":
-        st.error(f"Business Quality: NOT RATED — only {available} of {expected} core metrics were retrieved. This is a data limitation, not evidence that the company is a weak business.")
+        st.warning(f"Business quality is NOT RATED — only {available} of {expected} core metrics were retrieved. This is a data limitation, not proof of a weak business.")
     elif status=="Limited evidence":
-        st.warning(f"Business Quality: PROVISIONAL — {available} of {expected} core metrics retrieved. Treat the score as preliminary until more financial evidence is available.")
+        st.info(f"Business quality is PROVISIONAL — {available} of {expected} core metrics retrieved.")
     else:
-        st.success(f"Business Quality: EVIDENCE AVAILABLE — {available} of {expected} core metrics retrieved.")
+        st.success(f"Financial evidence available — {available} of {expected} core metrics retrieved.")
     sources=m.get("metric_sources",{})
     with st.expander("Financial data sources and coverage"):
         source_rows=[]
@@ -79,30 +129,21 @@ def thesis(data):
             x=m.get(key,np.nan)
             source_rows.append({"Metric":label,"Retrieved":bool(np.isfinite(x)),"Source":sources.get(key) or "Not returned by data provider"})
         st.dataframe(pd.DataFrame(source_rows),use_container_width=True,hide_index=True)
-        if data.get("fundamental_data_errors"):
-            st.caption("Provider retrieval notes: " + " · ".join(data["fundamental_data_errors"][:6]))
-    st.markdown("### Technical intelligence")
-    st.write(f"**Trend:** {t.get('trend','N/A')} · **Momentum score:** {val(t.get('momentum_score'))} · **RSI:** {val(t.get('rsi'))} · **Relative volume:** {val(t.get('relative_volume'),'x')}")
-    with st.expander("Chart display controls",expanded=True):
-        x,y=st.columns(2); show_entry=x.checkbox("Show technical entry levels",True,key=f"ent_{data['symbol']}");show_val=y.checkbox("Show bull/base/bear valuation overlays",False,key=f"val_{data['symbol']}")
-    st.plotly_chart(build_chart(data,show_entry,show_val),use_container_width=True)
-    st.markdown("### Entry plan")
-    entry_rows=[("Early entry",e.get("early_low"),e.get("early_high")),("Pullback entry",e.get("pullback_low"),e.get("pullback_high")),("Breakout confirmation",e.get("breakout"),None),("Invalidation",e.get("invalidation"),None),("Technical target 1",e.get("technical_target_1"),None),("Technical target 2",e.get("technical_target_2"),None)]
-    st.dataframe(pd.DataFrame([{"Level":k,"Price / Low":money(a),"High":money(b) if b is not None else "—"} for k,a,b in entry_rows]),use_container_width=True,hide_index=True)
-    st.markdown("### Valuation scenarios")
-    x,y,z=st.columns(3);x.metric("Bear case",money(v.get("bear")));y.metric("Base case / fair value",money(v.get("base")));z.metric("Bull case",money(v.get("bull")))
+        if data.get("fundamental_data_errors"):st.caption("Provider retrieval notes: "+" · ".join(data["fundamental_data_errors"][:6]))
+    st.markdown("### Valuation — what price might make sense?")
+    x,y,z=st.columns(3);x.metric("Bear case",money(v.get("bear")));y.metric("Base case",money(v.get("base")));z.metric("Bull case",money(v.get("bull")))
     st.caption(v.get("valuation_note",""))
     st.metric("Fair-value upside / downside",val(v.get("fair_value_upside"),"%"))
-    st.markdown("### Catalysts and potential risks")
-    if data["news"]:
-        for headline in data["news"][:8]: st.markdown(f"- {headline}")
-    else: st.caption("No current headlines returned by the free news source.")
+    st.markdown("### Risk review")
+    if sh["flags"]:
+        for flag in sh["flags"]:st.warning(flag)
+    else:st.success("No major screen-level risk flags. This is not a guarantee of safety or investment quality.")
     if sh["notes"]:
-        for note in sh["notes"]: st.warning(note)
-    summary=i.get("longBusinessSummary")
-    if summary:
-        with st.expander("Company business description"):st.write(summary)
-    st.caption("Scores are transparent screening estimates, not predictions. Simplified forward-EPS valuation is not a discounted cash-flow model or analyst consensus.")
+        for note in sh["notes"]:st.info(note)
+    with st.expander("Model diagnostics and scores"):
+        st.write({"Technical score":t.get("technical_score"),"Business quality score":data.get("fundamental_score"),"Opportunity rank":data.get("opportunity_score"),"Data coverage":data.get("fundamental_coverage")})
+        st.caption("Scores are secondary diagnostics only. The chart, actual price levels, business evidence and valuation assumptions should drive the research decision.")
+    st.caption("Research tool only. Free Yahoo Finance data may be delayed, incomplete or rate-limited. Technical levels are estimates, not guaranteed support or resistance.")
 
 @st.cache_data(ttl=900,show_spinner=False)
 def market_snapshot():
