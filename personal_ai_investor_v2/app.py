@@ -254,16 +254,23 @@ def thesis(data):
         st.dataframe(pd.DataFrame(source_rows),use_container_width=True,hide_index=True)
         if data.get("fundamental_data_errors"):st.caption("Provider retrieval notes: "+" · ".join(data["fundamental_data_errors"][:6]))
     st.markdown("### Valuation — what price might make sense?")
-    st.caption("Scenario estimates are built from reported company data and transparent sector-multiple assumptions. They are screening estimates, not analyst price targets.")
-    x,y,z=st.columns(3);x.metric("Bear case",money(v.get("bear")));y.metric("Base case",money(v.get("base")));z.metric("Bull case",money(v.get("bull")))
+    st.caption("When available, these scenarios use published Wall Street analyst targets: low / mean / high. If analyst coverage is unavailable, the report falls back to a clearly labeled financial model.")
+    x,y,z=st.columns(3)
+    x.metric("Bear case · analyst low",money(v.get("bear")),val(v.get("bear_upside"),"%"))
+    y.metric("Base case · analyst mean",money(v.get("base")),val(v.get("base_upside",v.get("fair_value_upside")),"%"))
+    z.metric("Bull case · analyst high",money(v.get("bull")),val(v.get("bull_upside"),"%"))
     st.caption(v.get("valuation_note",""))
-    st.metric("Fair-value upside / downside",val(v.get("fair_value_upside"),"%"))
+    st.metric("Base-case upside / downside",val(v.get("fair_value_upside"),"%"))
     st.caption("Valuation approach: " + str(v.get("valuation_method","Not available")))
     vi=v.get("valuation_inputs",{})
     valuation_rows=[]
     for label,key,fmt in [
-        ("Current share price","current_price","money"),("Forward EPS","forward_eps","money"),
-        ("Trailing EPS","trailing_eps","money"),("Reported forward P/E","forward_pe_reported","multiple"),
+        ("Current share price","current_price","money"),
+        ("Analyst target low","analyst_target_low","money"),("Analyst target mean","analyst_target_mean","money"),
+        ("Analyst target median","analyst_target_median","money"),("Analyst target high","analyst_target_high","money"),
+        ("Number of analyst opinions","analyst_count","shares"),
+        ("Forward EPS","forward_eps","money"),("Trailing EPS","trailing_eps","money"),
+        ("Reported forward P/E","forward_pe_reported","multiple"),
         ("Reported price / sales","price_to_sales_reported","multiple"),("Revenue per share","revenue_per_share","money"),
         ("Reference P/E used","reference_pe","multiple"),("Reference price / sales used","reference_ps","multiple"),
         ("Revenue","revenue","money"),("Shares outstanding","shares_outstanding","shares")]:
