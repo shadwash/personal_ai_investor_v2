@@ -73,6 +73,8 @@ def fundamentals_story(m, info):
         parts.append(("Returns",f"Return on equity is {pct('roe')}. " + ("This is a strong reported return on shareholder equity." if roe>=.15 else "This is a moderate or weak return; compare with peers and leverage.")))
     if np.isfinite(fcf):
         parts.append(("Cash generation",f"Reported free cash flow field is {cash('fcf')}. " + ("Positive cash generation gives the business more flexibility." if fcf>0 else "Negative cash flow means the company is consuming cash; determine whether this is investment or stress.")))
+    elif np.isfinite(m.get("operating_cash_flow",np.nan)):
+        parts.append(("Cash generation","Operating cash flow is "+cash("operating_cash_flow")+", but capital expenditure was unavailable, so free cash flow cannot be calculated reliably from this data pull."))
     else: parts.append(("Cash generation","Free cash flow is unavailable. We should not infer cash generation from earnings alone."))
     if np.isfinite(debt):
         parts.append(("Balance sheet",f"Debt-to-equity is {debt:.1f}%. " + ("Leverage appears relatively contained on this measure." if debt<50 else "Leverage deserves attention; compare debt maturities, interest expense and cash flow." if debt<150 else "Leverage is high on this measure and could increase financial risk.")))
@@ -174,7 +176,7 @@ def thesis(data):
     else: st.caption("No current headlines returned by the free news source. Check company filings and earnings updates before making a decision.")
     st.markdown("### Business quality — evidence, not a mystery score")
     m=data["fundamental_metrics"]
-    metric_labels=[("Revenue growth","revenue_growth","%"),("Earnings growth","earnings_growth","%"),("Operating margin","operating_margin","%"),("Profit margin","profit_margin","%"),("Return on equity","roe","%"),("Free cash flow","fcf","$"),("Debt / equity","debt_equity",""),("Forward P/E","forward_pe","x")]
+    metric_labels=[("Revenue growth","revenue_growth","%"),("Earnings growth","earnings_growth","%"),("Operating margin","operating_margin","%"),("Profit margin","profit_margin","%"),("Return on equity","roe","%"),("Free cash flow","fcf","$"),("Operating cash flow","operating_cash_flow","$"),("Debt / equity","debt_equity",""),("Forward P/E","forward_pe","x")]
     cols=st.columns(4)
     for idx,(label,key,suffix) in enumerate(metric_labels):
         x=m.get(key,np.nan); display=money(x) if suffix=="$" else (f"{x*100:.1f}%" if suffix=="%" and np.isfinite(x) else f"{x:.1f}{suffix}" if np.isfinite(x) else "N/A")
