@@ -196,6 +196,48 @@ def valuation_engine(info, price, statements=None):
                 "valuation_note":"Unavailable: a valid current share price was not returned.",
                 "valuation_method":"Unavailable","valuation_inputs":inputs}
 
+    # Prefer published analyst target range when Yahoo Finance supplies it.
+    analyst_low = fnum(i.get("targetLowPrice"))
+    analyst_mean = fnum(i.get("targetMeanPrice"))
+    analyst_median = fnum(i.get("targetMedianPrice"))
+    analyst_high = fnum(i.get("targetHighPrice"))
+    analyst_count = fnum(i.get("numberOfAnalystOpinions"))
+    inputs.update({
+        "analyst_target_low":analyst_low,
+        "analyst_target_mean":analyst_mean,
+        "analyst_target_median":analyst_median,
+        "analyst_target_high":analyst_high,
+        "analyst_count":analyst_count,
+    })
+    analyst_targets_valid = (
+        np.isfinite(analyst_low) and analyst_low > 0 and
+        np.isfinite(analyst_mean) and analyst_mean > 0 and
+        np.isfinite(analyst_high) and analyst_high > 0 and
+        analyst_low <= analyst_mean <= analyst_high
+    )
+    if analyst_targets_valid:
+        bear, base, bull = analyst_low, analyst_mean, analyst_high
+        median_upside = (analyst_median / price - 1) * 100 if np.isfinite(analyst_median) and analyst_median > 0 else np.nan
+        analyst_upside = (base / price - 1) * 100
+        count_text = f"{int(analyst_count)} analysts" if np.isfinite(analyst_count) else "analyst count not provided"
+        note = (
+            f"Published analyst target range: low {bear:.2f}, mean {base:.2f}, high {bull:.2f}; "
+            f"median {analyst_median:.2f}." if np.isfinite(analyst_median) and analyst_median > 0 else
+            f"Published analyst target range: low {bear:.2f}, mean {base:.2f}, high {bull:.2f}."
+        )
+        note += f" Based on {count_text}. Targets are analyst estimates, can change quickly, and are not guarantees."
+        return {
+            "fair_value":base,"bear":bear,"base":base,"bull":bull,
+            "fair_value_upside":analyst_upside,
+            "bear_upside":(bear/price-1)*100,
+            "base_upside":analyst_upside,
+            "bull_upside":(bull/price-1)*100,
+            "analyst_median_upside":median_upside,
+            "valuation_note":note,
+            "valuation_method":"Wall Street analyst targets",
+            "valuation_inputs":inputs
+        }
+
     eps = eps_forward if np.isfinite(eps_forward) and eps_forward > 0 else eps_trailing
     if np.isfinite(eps) and eps > 0:
         target_pe = sector_multiple(pe_targets, 20.0)
