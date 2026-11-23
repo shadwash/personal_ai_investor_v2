@@ -10,7 +10,7 @@ def research_company(symbol):
     statements = financial_statements(symbol)
     t = technical_engine(h)
     metrics, fund, coverage = fundamental_engine(i, statements)
-    val = valuation_engine(i, t.get("price", np.nan))
+    val = valuation_engine(i, t.get("price", np.nan), statements)
     val["fair_value_upside"] = (val["fair_value"]/t["price"]-1)*100 if np.isfinite(val["fair_value"]) and t.get("price",0)>0 else np.nan
     entries = entry_engine(t)
     shield = shield_engine(fund, t.get("technical_score",np.nan), val, entries, i)
