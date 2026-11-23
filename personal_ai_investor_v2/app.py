@@ -467,15 +467,38 @@ def industry_etf_snapshot():
             rsi=float(100-(100/(1+gains.iloc[-1]/losses.iloc[-1])))
         elif len(close)>=15 and gains.iloc[-1]>0 and losses.iloc[-1]==0:
             rsi=100.0
+        spy_week=(float(spy.iloc[-1])/float(spy.iloc[-6])-1)*100 if len(spy)>6 and spy.iloc[-6] else np.nan
         spy_one=(float(spy.iloc[-1])/float(spy.iloc[-22])-1)*100 if len(spy)>22 and spy.iloc[-22] else np.nan
         spy_three=(float(spy.iloc[-1])/float(spy.iloc[-64])-1)*100 if len(spy)>64 and spy.iloc[-64] else np.nan
+        rel_week=week-spy_week if np.isfinite(spy_week) else np.nan
+        rel_one=one-spy_one if np.isfinite(spy_one) else np.nan
+        rel_three=three-spy_three if np.isfinite(spy_three) else np.nan
+        # Compare the latest week's relative strength with the average weekly pace
+        # implied by the last month. Positive acceleration can flag an early turn.
+        acceleration=rel_week-(rel_one/4.0) if np.isfinite(rel_week) and np.isfinite(rel_one) else np.nan
+        above20=bool(close.iloc[-1]>ma20)
+        above50=bool(np.isfinite(ma50) and close.iloc[-1]>ma50)
+        if np.isfinite(rel_week) and np.isfinite(rel_one) and np.isfinite(rel_three):
+            if rel_week>0 and rel_one>0 and rel_three<=0:
+                rotation="EMERGING LEADERSHIP"
+            elif rel_week>0 and rel_one>0 and rel_three>0 and above20:
+                rotation="LEADING / CONFIRMED"
+            elif rel_week>0 and rel_one<=0 and acceleration>0:
+                rotation="EARLY IMPROVEMENT"
+            elif rel_week<0 and rel_one>0:
+                rotation="LEADERSHIP FADING"
+            elif rel_week<0 and rel_one<0 and rel_three<0:
+                rotation="PERSISTENT LAGGARD"
+            else:
+                rotation="MIXED / DEVELOPING"
+        else:
+            rotation="INSUFFICIENT RELATIVE DATA"
         rows.append({
             "Industry / theme":theme,"ETF":symbol,"Price":float(close.iloc[-1]),
             "1W Return":week,"1M Return":one,"3M Return":three,
-            "1M vs SPY":one-spy_one if np.isfinite(spy_one) else np.nan,
-            "3M vs SPY":three-spy_three if np.isfinite(spy_three) else np.nan,
-            "Above 20D":bool(close.iloc[-1]>ma20),"Above 50D":bool(np.isfinite(ma50) and close.iloc[-1]>ma50),
-            "RSI":rsi
+            "1W vs SPY":rel_week,"1M vs SPY":rel_one,"3M vs SPY":rel_three,
+            "RS Acceleration":acceleration,"Rotation Signal":rotation,
+            "Above 20D":above20,"Above 50D":above50,"RSI":rsi
         })
     return pd.DataFrame(rows)
 
@@ -540,19 +563,24 @@ def render_industry_discovery():
     if frame.empty:
         st.warning("Industry ETF price history is unavailable from the free data source right now.")
         return
-    frame=frame.sort_values(["1M vs SPY","3M vs SPY"],ascending=False,na_position="last")
-    st.markdown("### Industry leadership")
+    rotation_order={"EMERGING LEADERSHIP":0,"EARLY IMPROVEMENT":1,"LEADING / CONFIRMED":2,"MIXED / DEVELOPING":3,"LEADERSHIP FADING":4,"PERSISTENT LAGGARD":5,"INSUFFICIENT RELATIVE DATA":6}
+    frame["Rotation Priority"]=frame["Rotation Signal"].map(rotation_order).fillna(7)
+    frame=frame.sort_values(["Rotation Priority","1W vs SPY","1M vs SPY"],ascending=[True,False,False],na_position="last")
+    st.markdown("### Industry rotation radar")
+    st.write("This view looks for changes in relative strength—not just the ETFs that already lead. A theme can surface as emerging leadership when its latest week and month beat SPY even though its three-month relative trend is still negative.")
     st.dataframe(frame,use_container_width=True,hide_index=True,column_config={
         "Price":st.column_config.NumberColumn(format="$%.2f"),
         "1W Return":st.column_config.NumberColumn(format="%.1f%%"),
         "1M Return":st.column_config.NumberColumn(format="%.1f%%"),
         "3M Return":st.column_config.NumberColumn(format="%.1f%%"),
+        "1W vs SPY":st.column_config.NumberColumn(format="%+.1f pp"),
         "1M vs SPY":st.column_config.NumberColumn(format="%+.1f pp"),
         "3M vs SPY":st.column_config.NumberColumn(format="%+.1f pp"),
+        "RS Acceleration":st.column_config.NumberColumn(format="%+.1f pp"),
         "RSI":st.column_config.NumberColumn(format="%.1f")
     })
-    st.caption("Relative returns are percentage-point differences versus SPY over matching lookback windows. RSI and moving-average flags describe the ETF chart, not its holdings.")
-    st.markdown("### Find individual companies in a leading theme")
+    st.caption("Rotation signals are descriptive rules, not forecasts. RS acceleration compares the latest week's relative return with one-quarter of the month's relative return; short windows are noisy. Check liquidity, holdings, fundamentals and the underlying chart before acting.")
+    st.markdown("### Find individual companies in a selected theme")
     theme=st.selectbox("Choose an industry or theme",list(INDUSTRY_ETFS.keys()),index=0)
     etf=INDUSTRY_ETFS[theme]
     etf_row=frame[frame["ETF"]==etf]
