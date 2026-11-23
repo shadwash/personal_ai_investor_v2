@@ -24,6 +24,38 @@ def info(symbol):
     except Exception:
         return {}
 
+@st.cache_data(ttl=INFO_CACHE_TTL, show_spinner=False)
+def financial_statements(symbol):
+    """Fetch annual and quarterly statements independently; Yahoo may omit one or more."""
+    ticker = yf.Ticker(symbol)
+    result = {"income": pd.DataFrame(), "balance": pd.DataFrame(), "cashflow": pd.DataFrame(), "errors": []}
+    getters = {
+        "income": ("get_income_stmt", "income_stmt"),
+        "balance": ("get_balance_sheet", "balance_sheet"),
+        "cashflow": ("get_cash_flow", "cashflow"),
+    }
+    for key, (method_name, property_name) in getters.items():
+        frame = pd.DataFrame()
+        method = getattr(ticker, method_name, None)
+        if callable(method):
+            for freq in ("yearly", "quarterly"):
+                try:
+                    candidate = method(freq=freq)
+                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                        frame = candidate
+                        break
+                except Exception as exc:
+                    result["errors"].append(f"{key} {freq}: {type(exc).__name__}")
+        if frame.empty:
+            try:
+                candidate = getattr(ticker, property_name)
+                if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                    frame = candidate
+            except Exception as exc:
+                result["errors"].append(f"{key}: {type(exc).__name__}")
+        result[key] = frame
+    return result
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def news(symbol):
     try:
@@ -57,7 +89,7 @@ def exchange_symbols():
             test = str(row.get("Test Issue", "N")).upper()
             if not s or s.lower() == "nan" or etf == "y" or test == "y": continue
             if any(x in name for x in ["warrant", "right", "unit", "preferred", "depositary share", "notes due", " debenture"]): continue
-            if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,6}", s): continue
+            if not re.fullmatch(r"[A-Z][A-Z0-9.\\-]{0,6}", s): continue
             symbols.append(s.replace("-", "."))
     return sorted(set(symbols))
 
@@ -81,12 +113,10 @@ def discover_universe(count=60):
     directory = exchange_symbols()
     directory_sample = []
     if directory:
-        # Rotate the directory slice by calendar day to broaden discovery without pretending to scan all listings.
         day = dt.datetime.now(dt.timezone.utc).timetuple().tm_yday
         start = (day * count) % len(directory)
         rotated = directory[start:] + directory[:start]
         directory_sample = rotated[:max(30, count * 2)]
-    # Interleave screener leaders and directory names so a scan actually examines both sources.
     mixed = []
     a, b = screen_unique[:count * 2], directory_sample
     for idx in range(max(len(a), len(b))):
