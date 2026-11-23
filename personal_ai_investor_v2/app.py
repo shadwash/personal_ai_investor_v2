@@ -254,9 +254,27 @@ def thesis(data):
         st.dataframe(pd.DataFrame(source_rows),use_container_width=True,hide_index=True)
         if data.get("fundamental_data_errors"):st.caption("Provider retrieval notes: "+" · ".join(data["fundamental_data_errors"][:6]))
     st.markdown("### Valuation — what price might make sense?")
+    st.caption("Scenario estimates are built from reported company data and transparent sector-multiple assumptions. They are screening estimates, not analyst price targets.")
     x,y,z=st.columns(3);x.metric("Bear case",money(v.get("bear")));y.metric("Base case",money(v.get("base")));z.metric("Bull case",money(v.get("bull")))
     st.caption(v.get("valuation_note",""))
     st.metric("Fair-value upside / downside",val(v.get("fair_value_upside"),"%"))
+    st.caption("Valuation approach: " + str(v.get("valuation_method","Not available")))
+    vi=v.get("valuation_inputs",{})
+    valuation_rows=[]
+    for label,key,fmt in [
+        ("Current share price","current_price","money"),("Forward EPS","forward_eps","money"),
+        ("Trailing EPS","trailing_eps","money"),("Reported forward P/E","forward_pe_reported","multiple"),
+        ("Reported price / sales","price_to_sales_reported","multiple"),("Revenue per share","revenue_per_share","money"),
+        ("Reference P/E used","reference_pe","multiple"),("Reference price / sales used","reference_ps","multiple"),
+        ("Revenue","revenue","money"),("Shares outstanding","shares_outstanding","shares")]:
+        value=vi.get(key,np.nan)
+        if isinstance(value,(int,float,np.number)) and np.isfinite(value):
+            shown=money(value) if fmt=="money" else f"{value:,.0f}" if fmt=="shares" else f"{value:.1f}×"
+            valuation_rows.append({"Valuation input":label,"Reported / assumed value":shown})
+    if vi.get("sector") or vi.get("industry"):
+        valuation_rows.append({"Valuation input":"Sector / industry","Reported / assumed value":f"{vi.get('sector','Not provided')} / {vi.get('industry','Not provided')}"})
+    if valuation_rows:
+        st.dataframe(pd.DataFrame(valuation_rows),use_container_width=True,hide_index=True)
     st.markdown("### Risk review")
     if sh["flags"]:
         for flag in sh["flags"]:st.warning(flag)
@@ -389,7 +407,7 @@ elif page=="Research History":
 else:
     st.markdown("## Research Methodology")
     st.markdown("### Independent research engines")
-    st.write("Market Scout discovers candidates through Yahoo Finance screeners and a rotating sample of public exchange symbol directories. Business Quality scores reported growth, margins, returns, free cash flow, leverage and valuation inputs. Technical Intelligence scores trend, momentum, RSI, volume and price structure. Valuation uses a simplified forward-EPS multiple model when data permits. Shield highlights data gaps and screen-level risks.")
+    st.write("Market Scout discovers candidates through Yahoo Finance screeners and a rotating sample of public exchange symbol directories. Business Quality scores reported growth, margins, returns, free cash flow, leverage and valuation inputs. Technical Intelligence scores trend, momentum, RSI, volume and price structure. Valuation uses a sector-reference P/E when positive forward or trailing EPS is available, and falls back to a transparent sector-reference price-to-sales scenario when earnings are unavailable. Scenario multiples are assumptions, not analyst targets. Shield highlights data gaps and screen-level risks.")
     st.markdown("### How to read a company report")
     st.write("Start with the candlestick chart and moving averages. Read trend, momentum, RSI, relative volume, support, resistance and invalidation together. Then inspect revenue and earnings growth, margins, cash generation, leverage and valuation. The final readout explains where the chart and business agree—or disagree. Screening scores are not investment conclusions.")
     st.markdown("### Important limitations")
