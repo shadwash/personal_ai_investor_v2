@@ -10,6 +10,7 @@ from research.company_research import research_company
 from charts.price_chart import build_chart
 from storage.history import record_research, log_frame
 from engines.agent_committee import run_committee
+from research.institutional_suite import render_research_suite
 
 st.set_page_config(page_title=APP_NAME,page_icon="📈",layout="wide",initial_sidebar_state="expanded")
 st.markdown("""
@@ -72,7 +73,7 @@ iframe{color-scheme:dark}
 <div class="hero"><div class="kicker">Independent research desk · Version 2.0</div><h1>PERSONAL AI INVESTOR</h1><p>Discover exceptional businesses. Challenge the evidence. Find attractive prices before chasing becomes the only option.</p></div>
 """,unsafe_allow_html=True)
 
-PAGES=["Command Center","Market Opportunities","Company Research","Entry & Risk","Swing Research","AI Investment Committee","Research History","Methodology"]
+PAGES=["Command Center","Market Opportunities","Company Research","Entry & Risk","Swing Research","AI Investment Committee","Institutional Research Suite","Research History","Methodology"]
 with st.sidebar:
     st.markdown("### PERSONAL AI INVESTOR")
     page=st.radio("Research workspace",PAGES,label_visibility="collapsed")
@@ -441,6 +442,9 @@ elif page=="AI Investment Committee":
         if st.button("Refresh committee analysis"):
             st.cache_data.clear()
             st.rerun()
+
+elif page=="Institutional Research Suite":
+    render_research_suite()
 
 elif page=="Research History":
     st.markdown("## Research History")
